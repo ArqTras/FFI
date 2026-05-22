@@ -72,7 +72,8 @@ case "${HOST}" in
     IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
     NATIVE_PREFIX="${WORKDIR}/icu-native-install"
     NATIVE_BUILD="${WORKDIR}/icu-native-build"
-    mkdir -p "${NATIVE_BUILD}"
+    IOS_BUILD="${WORKDIR}/icu-ios-build"
+    mkdir -p "${NATIVE_BUILD}" "${IOS_BUILD}"
     (
       cd "${NATIVE_BUILD}"
       "${ICU_SRC_ROOT}/source/configure" \
@@ -83,13 +84,29 @@ case "${HOST}" in
       make -j"$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
       make install
     )
+    if [[ ! -f "${NATIVE_BUILD}/config/icucross.mk" ]]; then
+      echo "error: native ICU build did not produce ${NATIVE_BUILD}/config/icucross.mk" >&2
+      exit 1
+    fi
     export CC="$(xcrun --sdk iphoneos --find clang)"
     export CXX="$(xcrun --sdk iphoneos --find clang++)"
     export CFLAGS="-fPIC -arch arm64 -isysroot${IOS_SDK} -miphoneos-version-min=13.0"
     export CXXFLAGS="${CFLAGS}"
     export LDFLAGS="-arch arm64 -isysroot${IOS_SDK} -miphoneos-version-min=13.0"
-    ./configure --host=aarch64-apple-ios --disable-dyload --disable-tools \
-      --with-cross-build="${NATIVE_PREFIX}" "${COMMON_OPTS[@]}"
+    (
+      cd "${IOS_BUILD}"
+      # ICU cross-build: --with-cross-build must be the native *build* tree (icucross.mk), not install prefix.
+      "${ICU_SRC_ROOT}/source/configure" --host=aarch64-apple-ios --disable-dyload --disable-tools \
+        --with-cross-build="${NATIVE_BUILD}" "${COMMON_OPTS[@]}"
+      make -j"$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+      make install
+    )
+    if [[ ! -f "${LIBDIR}/libicuuc.a" || ! -f "${LIBDIR}/libicui18n.a" || ! -f "${LIBDIR}/libicudata.a" ]]; then
+      echo "error: ICU install did not produce expected archives under ${LIBDIR}" >&2
+      exit 1
+    fi
+    echo "[build-icu-static-into-depends] OK -> ${LIBDIR}/libicu{uc,i18n,data}.a"
+    exit 0
     ;;
   *)
     echo "error: unsupported depends host for ICU build: ${HOST}" >&2
