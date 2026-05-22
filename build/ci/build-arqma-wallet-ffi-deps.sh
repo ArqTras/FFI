@@ -4,21 +4,21 @@
 # This does NOT run a blanket `cmake --build` of the whole Arqma tree (no arqmad, no rpc, etc.).
 #
 # Modes:
-#   * Default: host CMake in ARQMA_CMAKE_BUILD_DIR (default …/build/ci-native-release).
-#   * ARQMA_WALLET_FFI_USE_DEPENDS=1 (linux|macos only): `make -C contrib/depends HOST=…` then CMake with
+#   * Default: host CMake in ARQMA_CMAKE_BUILD_DIR (default ???/build/ci-native-release).
+#   * ARQMA_WALLET_FFI_USE_DEPENDS=1 (linux|macos only): `make -C contrib/depends HOST=???` then CMake with
 #     contrib/depends/<HOST>/share/toolchain.cmake and STATIC=ON (same idea as upstream `make depends`).
 #
-# Upstream: arqtras/arqma (fork) — clone with build/ci/clone-arqma.sh first (ARQMA_UPSTREAM_REF, default pospow).
+# Upstream: arqtras/arqma (fork) ??? clone with build/ci/clone-arqma.sh first (ARQMA_UPSTREAM_REF, default pospow).
 #
 # Usage:
 #   bash build/ci/build-arqma-wallet-ffi-deps.sh linux|macos|mingw
 #   ARQMA_WALLET_FFI_PLATFORM=linux bash build/ci/build-arqma-wallet-ffi-deps.sh
 #
 # Env:
-#   ARQMA_WALLET2_UPSTREAM_DIR   — Arqma core root (default: <repo>/rust/arqma-rpc-upstream)
-#   ARQMA_CMAKE_BUILD_DIR        — Linux/macOS CMake build dir (default: ci-native-release or ci-depends-release)
-#   ARQMA_MINGW_BUILD_DIR        — MinGW build dir (default: <upstream>/build-mingw)
-#   ARQMA_WALLET_FFI_USE_DEPENDS — set to 1 on Linux/macOS to build vendored static deps via contrib/depends
+#   ARQMA_WALLET2_UPSTREAM_DIR   ??? Arqma core root (default: <repo>/rust/arqma-rpc-upstream)
+#   ARQMA_CMAKE_BUILD_DIR        ??? Linux/macOS CMake build dir (default: ci-native-release or ci-depends-release)
+#   ARQMA_MINGW_BUILD_DIR        ??? MinGW build dir (default: <upstream>/build-mingw)
+#   ARQMA_WALLET_FFI_USE_DEPENDS ??? set to 1 on Linux/macOS to build vendored static deps via contrib/depends
 set -eu
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 UP="${ARQMA_WALLET2_UPSTREAM_DIR:-$ROOT/rust/arqma-rpc-upstream}"
@@ -98,7 +98,7 @@ if $use_depends; then
   BUILD_DIR="${ARQMA_CMAKE_BUILD_DIR:-$UP/build/ci-depends-release}"
   mkdir -p "$UP/contrib/depends/built" "$UP/contrib/depends/sources"
 
-  echo "[build-arqma-wallet-ffi-deps] contrib/depends (HOST=$DEPENDS_HOST) — this can take a long time on a cold cache"
+  echo "[build-arqma-wallet-ffi-deps] contrib/depends (HOST=$DEPENDS_HOST) ??? this can take a long time on a cold cache"
   make -C "$UP/contrib/depends" "HOST=$DEPENDS_HOST" -j"$J"
 
   # Static ICU into the same depends lib/ tree (not part of upstream packages.mk) so the Flutter FFI
@@ -119,6 +119,7 @@ if $use_depends; then
     -D STATIC=ON
 
   cmake --build "$BUILD_DIR" --target "${WALLET_FFI_TARGETS[@]}" -j"$J"
+  bash "$ROOT/build/ci/fold-wallet-merged-archive.sh" "$BUILD_DIR"
 
   test -f "$BUILD_DIR/src/wallet/libwallet_merged.a"
   echo "[build-arqma-wallet-ffi-deps] OK ($PLATFORM, depends): $BUILD_DIR/src/wallet/libwallet_merged.a"
@@ -144,6 +145,7 @@ else
 fi
 
 cmake --build "$BUILD_DIR" --target "${WALLET_FFI_TARGETS[@]}" -j"$J"
+bash "$ROOT/build/ci/fold-wallet-merged-archive.sh" "$BUILD_DIR"
 
 test -f "$BUILD_DIR/src/wallet/libwallet_merged.a"
 

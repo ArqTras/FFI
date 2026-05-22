@@ -181,32 +181,8 @@ if(BUILD_GUI_DEPS)
           COMMAND ${CMAKE_COMMAND} -E rename $<TARGET_FILE:wallet_merged>.fat $<TARGET_FILE:wallet_merged>
           COMMENT "Fold epee/easylogging/randomx into wallet_merged.lib (Windows COFF)"
           VERBATIM)
-      elseif(ANDROID)
-        # NDK llvm-ar does not implement GNU ar MRI (`OPEN`/`ADDLIB`); use host/cross GNU ar for the merge step.
-        find_program(ARQMA_WALLET_MERGE_AR NAMES aarch64-linux-gnu-ar ar REQUIRED)
-        add_custom_command(TARGET wallet_merged POST_BUILD
-          COMMAND ${CMAKE_COMMAND}
-            -DCMAKE_AR=${ARQMA_WALLET_MERGE_AR}
-            -DWALLET_MERGED=$<TARGET_FILE:wallet_merged>
-            -DLIBEPEE=$<TARGET_FILE:epee>
-            -DLIBEASYLOGGING=$<TARGET_FILE:easylogging>
-            -DLIBRANDOMX=$<TARGET_FILE:randomx>
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/wallet_merge_gnu_ar.cmake"
-          COMMENT "Fold epee/easylogging/randomx into libwallet_merged.a (Android GNU ar MRI)"
-          VERBATIM)
-      else()
-        # MinGW / Linux / BSD: depends may set CMAKE_AR to llvm-ar (no MRI); use host GNU ar.
-        find_program(ARQMA_WALLET_MERGE_AR NAMES ar gcc-ar REQUIRED)
-        add_custom_command(TARGET wallet_merged POST_BUILD
-          COMMAND ${CMAKE_COMMAND}
-            -DCMAKE_AR=${ARQMA_WALLET_MERGE_AR}
-            -DWALLET_MERGED=$<TARGET_FILE:wallet_merged>
-            -DLIBEPEE=$<TARGET_FILE:epee>
-            -DLIBEASYLOGGING=$<TARGET_FILE:easylogging>
-            -DLIBRANDOMX=$<TARGET_FILE:randomx>
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/wallet_merge_gnu_ar.cmake"
-          COMMENT "Fold epee/easylogging/randomx into libwallet_merged.a (GNU ar MRI)"
-          VERBATIM)
+      elseif(ANDROID OR (UNIX AND NOT APPLE))
+        # Fold at build time via build/ci/fold-wallet-merged-archive.sh (GNU ar MRI fails on thin LLVM .a).
       endif()
     endif()
     if(IOS)

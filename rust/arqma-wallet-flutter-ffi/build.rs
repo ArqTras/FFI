@@ -307,12 +307,18 @@ fn macos_wallet_ffi_static_hybrid_cdylib_args() {
     match &vendor {
         Some(libdir) => {
             for stem in mac_libs {
+                if stem == "boost_container" && depends_vendor_archive_fuzzy_boost(libdir, stem).is_none() {
+                    continue;
+                }
                 emit_depends_vendor_lib(&emit, libdir, stem);
             }
             emit_depends_icu_static_if_present(&emit, libdir);
         }
         None => {
             for stem in mac_libs {
+                if stem == "boost_container" {
+                    continue;
+                }
                 emit(&format!("-l{stem}"));
             }
         }

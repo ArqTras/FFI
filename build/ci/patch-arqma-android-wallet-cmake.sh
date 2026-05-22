@@ -3,7 +3,7 @@
 set -euo pipefail
 UP="${1:?upstream dir}"
 CM="$UP/src/wallet/CMakeLists.txt"
-if grep -q 'ARQMA_WALLET_MERGE_AR' "$CM" 2>/dev/null; then
+if grep -q 'fold-wallet-merged-archive' "$CM" 2>/dev/null || grep -q 'ARQMA_WALLET_MERGE_AR' "$CM" 2>/dev/null; then
   exit 0
 fi
 python3 - "$CM" <<'PY'

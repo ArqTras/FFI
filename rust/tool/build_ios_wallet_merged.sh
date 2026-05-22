@@ -45,6 +45,8 @@ for t in "${TARGETS[@]}"; do
   cmake --build "${BUILD_DIR}" --target "${t}" -j"${J}"
 done
 
+bash "${ROOT}/build/ci/fold-wallet-merged-archive.sh" "${BUILD_DIR}"
+
 merged="${BUILD_DIR}/src/wallet/libwallet_merged.a"
 if [[ ! -f "${merged}" ]] || [[ "$(wc -c < "${merged}" | tr -d ' ')" -lt 1048576 ]]; then
   echo "==> Repacking libwallet_merged.a"

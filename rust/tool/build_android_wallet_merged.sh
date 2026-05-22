@@ -70,6 +70,8 @@ for t in "${TARGETS[@]}"; do
   cmake --build "${BUILD_DIR}" --target "${t}" -j"${J}"
 done
 
+bash "${ROOT}/build/ci/fold-wallet-merged-archive.sh" "${BUILD_DIR}"
+
 merged="${BUILD_DIR}/src/wallet/libwallet_merged.a"
 if [[ ! -f "${merged}" ]]; then
   merged="$(find "${BUILD_DIR}" -name 'libwallet_merged.a' -size +1M -print -quit)"
