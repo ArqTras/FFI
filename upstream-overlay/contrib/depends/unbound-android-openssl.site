@@ -1,0 +1,14 @@
+# Sourced before ./configure (Android cross). Link probes fail with static OpenSSL;
+# cache results for OpenSSL 3.x APIs used by unbound 1.22.
+export ac_cv_lib_crypto=yes
+export ac_cv_lib_ssl=yes
+export ac_cv_lib_crypto_EVP_sha256=yes
+export ac_cv_lib_crypto_EVP_sha512=yes
+export ac_cv_lib_crypto_EVP_sha1=yes
+export ac_cv_func_EVP_sha256=yes
+export ac_cv_func_EVP_sha512=yes
+export ac_cv_func_EVP_sha1=yes
+export ac_cv_func_EVP_MD_CTX_new=yes
+export ac_cv_func_OPENSSL_init_crypto=yes
+export ac_cv_func_OPENSSL_init_ssl=yes
+export ac_cv_func_EVP_PKEY_fromdata=yes

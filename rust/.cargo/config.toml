@@ -1,0 +1,27 @@
+# Faster local builds (workspace: rust/)
+# ---------------------------------------------------------------------------
+# 1) Compile cache (best for repeated deps / CI):
+#    cargo install sccache
+#    Uncomment the two lines below; optionally: sccache --start-server
+# [build]
+# rustc-wrapper = "sccache"
+#
+# 2) Faster linker (Windows MSVC, Rust 1.70+; disable if the build fails):
+# [target.x86_64-pc-windows-msvc]
+# linker = "rust-lld"
+#
+# 3) Tauri: use the `local` profile (thin LTO) — `npm run ci:tauri:local` in rust/tauri-app
+#
+# 4) Keep build output under this workspace: `rust/target`. The Tauri npm scripts
+#    (`with-rust-target.mjs`) set `CARGO_TARGET_DIR` to this path so tools that inject
+#    a custom target dir (e.g. remote agents) do not store bundles outside the repo.
+[build]
+target-dir = "target"
+
+# Default Arqma Core root next to `rust/` — build.rs links `wallet_merged` from upstream `build*`.
+# Path is relative to the parent of the `.cargo` directory (`rust/`).
+[env]
+ARQMA_WALLET2_UPSTREAM_DIR = { value = "arqma-rpc-upstream", relative = true }
+
+[target.aarch64-apple-ios]
+rustflags = ["-C", "link-arg=-miphoneos-version-min=13.0"]

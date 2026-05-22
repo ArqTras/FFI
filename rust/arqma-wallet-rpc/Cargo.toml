@@ -1,0 +1,25 @@
+[package]
+name = "arqma-wallet-rpc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository = "https://github.com/ArqTras/FFI"
+description = "Integration boundary for Arqma wallet JSON-RPC (subprocess today, FFI/native later). See docs/WALLET_RUST_PORT.md."
+
+[features]
+default = []
+http-digest = ["dep:reqwest", "dep:md5", "dep:base64", "dep:rand"]
+
+[dependencies]
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+arqma-wallet2-api = { path = "../arqma-wallet2-api" }
+base64 = { version = "0.22", optional = true }
+md5 = { version = "0.7", optional = true }
+rand = { version = "0.8", optional = true }
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+], optional = true }

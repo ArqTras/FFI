@@ -1,0 +1,300 @@
+# Build arqma-wallet-flutter-ffi for Linux, macOS, Windows, Android, iOS → one GitHub Release.
+name: FFI release
+
+on:
+  push:
+    tags:
+      - "1.*.*"
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (must exist or will be created from HEAD)"
+        required: true
+        default: "1.0.0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ffi-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ARQMA_WALLET2_UPSTREAM_DIR: ${{ github.workspace }}/rust/arqma-rpc-upstream
+  ARQMA_UPSTREAM_REPO: https://github.com/arqtras/arqma.git
+  ARQMA_UPSTREAM_REF: pospow
+  ARQMA_WALLET_FFI_USE_DEPENDS: "1"
+  ARQMA_WALLET_FFI_STATIC_HYBRID: "1"
+
+jobs:
+  resolve-version:
+    name: Resolve release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: ver
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          TAG="${TAG#v}"
+          echo "version=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Release version=${TAG}"
+
+  ffi-linux:
+    name: Linux x86_64
+    needs: [resolve-version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: ffi-linux-${{ needs.resolve-version.outputs.version }}
+      - name: Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl cmake ninja-build pkg-config clang \
+            libboost-all-dev libssl-dev libzmq3-dev libsodium-dev libhidapi-dev libunbound-dev \
+            libreadline-dev liblmdb-dev libusb-1.0-0-dev libudev-dev libicu-dev python3 zip
+      - run: chmod +x build/ci/*.sh rust/tool/*.sh
+      - run: bash build/ci/clone-arqma.sh
+      - uses: actions/cache@v4
+        with:
+          path: rust/arqma-rpc-upstream/contrib/depends
+          key: ffi-linux-depends-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'upstream-overlay/**') }}
+          restore-keys: ffi-linux-depends-
+      - run: bash build/ci/build-arqma-linux.sh
+      - name: cargo build FFI
+        working-directory: rust
+        run: |
+          export PATH="${HOME}/.cargo/bin:${PATH}"
+          cargo build -p arqma-wallet-flutter-ffi --release
+      - id: pack
+        run: bash build/ci/package-ffi-artifact.sh linux-x86_64 "${{ needs.resolve-version.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffi-linux-x86_64
+          path: dist/arqma-wallet-ffi-linux-x86_64-*.zip
+
+  ffi-macos:
+    name: macOS arm64
+    needs: [resolve-version]
+    runs-on: macos-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: ffi-macos-${{ needs.resolve-version.outputs.version }}
+      - name: Homebrew deps
+        run: |
+          brew install cmake boost openssl zeromq libsodium hidapi unbound readline lmdb zip
+      - run: chmod +x build/ci/*.sh rust/tool/*.sh
+      - run: bash build/ci/clone-arqma.sh
+      - uses: actions/cache@v4
+        with:
+          path: rust/arqma-rpc-upstream/contrib/depends
+          key: ffi-macos-depends-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'upstream-overlay/**') }}
+          restore-keys: ffi-macos-depends-
+      - run: bash build/ci/build-arqma-macos.sh
+      - name: cargo build FFI
+        working-directory: rust
+        env:
+          ARQMA_WALLET_FFI_STATIC_HYBRID: "1"
+        run: cargo build -p arqma-wallet-flutter-ffi --release
+      - run: bash build/ci/package-ffi-artifact.sh macos-arm64 "${{ needs.resolve-version.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffi-macos-arm64
+          path: dist/arqma-wallet-ffi-macos-arm64-*.zip
+
+  ffi-windows:
+    name: Windows x86_64 GNU
+    needs: [resolve-version]
+    runs-on: windows-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        shell: bash
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - run: rustup target add x86_64-pc-windows-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: ffi-windows-${{ needs.resolve-version.outputs.version }}
+      - id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-make
+            mingw-w64-x86_64-boost mingw-w64-x86_64-openssl mingw-w64-x86_64-libsodium
+            mingw-w64-x86_64-zeromq mingw-w64-x86_64-hidapi mingw-w64-x86_64-readline
+            mingw-w64-x86_64-ncurses mingw-w64-x86_64-unbound mingw-w64-x86_64-lmdb
+            mingw-w64-x86_64-icu mingw-w64-x86_64-zlib mingw-w64-x86_64-libunwind git zip
+      - name: Clone upstream + wallet_merged
+        shell: msys2 {0}
+        run: |
+          export ARQMA_WALLET2_UPSTREAM_DIR="$(cygpath -u "$GITHUB_WORKSPACE")/rust/arqma-rpc-upstream"
+          bash "$(cygpath -u "$GITHUB_WORKSPACE")/build/ci/clone-arqma.sh"
+          bash "$(cygpath -u "$GITHUB_WORKSPACE")/build/ci/build-arqma-mingw.sh"
+      - name: cargo build FFI
+        working-directory: rust
+        shell: pwsh
+        env:
+          CARGO_PROFILE_RELEASE_LTO: thin
+        run: |
+          $root = "${{ steps.msys2.outputs.msys2-location }}"
+          if ([string]::IsNullOrWhiteSpace($root)) { $root = "C:\msys64" }
+          $env:Path = "$root\mingw64\bin;$root\usr\bin;" + $env:Path
+          $env:ARQMA_WALLET2_MSYS_ROOT = "$root\mingw64"
+          $env:ARQMA_MINGW_BIN = "$root\mingw64\bin"
+          $env:ARQMA_WALLET2_UPSTREAM_DIR = "${{ github.workspace }}\rust\arqma-rpc-upstream"
+          cargo build -p arqma-wallet-flutter-ffi --release --target x86_64-pc-windows-gnu
+      - name: Package artifact
+        shell: msys2 {0}
+        run: |
+          VER="${{ needs.resolve-version.outputs.version }}"
+          bash "$(cygpath -u "$GITHUB_WORKSPACE")/build/ci/package-ffi-artifact.sh" windows-x86_64-gnu "$VER"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffi-windows-x86_64-gnu
+          path: dist/arqma-wallet-ffi-windows-x86_64-gnu-*.zip
+
+  ffi-android:
+    name: Android (arm64 + x86_64)
+    needs: [resolve-version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - run: rustup target add aarch64-linux-android x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: ffi-android-${{ needs.resolve-version.outputs.version }}
+      - name: Linux + Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl cmake ninja-build pkg-config clang \
+            python3 python3-pip unzip zip git libssl-dev libboost-all-dev
+      - name: Install Android NDK r28c
+        run: |
+          set -eu
+          curl -fsSL -o ndk.zip https://dl.google.com/android/repository/android-ndk-r28c-linux.zip
+          unzip -q ndk.zip
+          echo "ANDROID_NDK_HOME=${GITHUB_WORKSPACE}/android-ndk-r28c" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=${GITHUB_WORKSPACE}/android-ndk-r28c" >> "$GITHUB_ENV"
+          echo "ARQMA_USE_SDK_ANDROID_NDK=1" >> "$GITHUB_ENV"
+      - run: chmod +x build/ci/*.sh rust/tool/*.sh
+      - run: bash build/ci/clone-arqma.sh
+      - uses: actions/cache@v4
+        with:
+          path: rust/arqma-rpc-upstream/contrib/depends
+          key: ffi-android-depends-${{ hashFiles('upstream-overlay/**', 'rust/tool/build_android_wallet_merged.sh') }}
+          restore-keys: ffi-android-depends-
+      - name: Build Android FFI
+        run: |
+          export PATH="${HOME}/.cargo/bin:${PATH}"
+          export ARQMA_SKIP_DEPENDS_CRLF=1
+          bash rust/tool/build_mobile_wallet_ffi_android.sh
+      - run: bash build/ci/package-ffi-artifact.sh android "${{ needs.resolve-version.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffi-android
+          path: dist/arqma-wallet-ffi-android-*.zip
+
+  ffi-ios:
+    name: iOS (device + simulator)
+    needs: [resolve-version]
+    runs-on: macos-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: ffi-ios-${{ needs.resolve-version.outputs.version }}
+      - name: Homebrew deps
+        run: brew install cmake boost openssl zeromq libsodium hidapi unbound readline lmdb zip
+      - run: chmod +x build/ci/*.sh rust/tool/*.sh
+      - run: bash build/ci/clone-arqma.sh
+      - name: Patch zeromq for iOS cross-build
+        run: |
+          bash build/ci/patch-zeromq-ios-host.sh rust/arqma-rpc-upstream || true
+          bash build/ci/patch-zeromq-configure-ios.sh rust/arqma-rpc-upstream || true
+      - name: Build iOS FFI
+        env:
+          BUILD_IOS_SIM: "1"
+        run: bash rust/tool/build_mobile_wallet_ffi_ios.sh
+      - run: bash build/ci/package-ffi-artifact.sh ios "${{ needs.resolve-version.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffi-ios
+          path: dist/arqma-wallet-ffi-ios-*.zip
+
+  publish-release:
+    name: Publish GitHub Release
+    needs:
+      - resolve-version
+      - ffi-linux
+      - ffi-macos
+      - ffi-windows
+      - ffi-android
+      - ffi-ios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: ffi-*
+          merge-multiple: true
+      - name: List release assets
+        run: find artifacts -type f -name '*.zip' | sort
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve-version.outputs.tag }}
+          name: Arqma Wallet FFI ${{ needs.resolve-version.outputs.version }}
+          generate_release_notes: true
+          files: artifacts/*.zip
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

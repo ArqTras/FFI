@@ -1,0 +1,20 @@
+[package]
+name = "arqma-wallet-flutter-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository = "https://github.com/ArqTras/FFI"
+description = "C ABI for Flutter desktop: native wallet2 (arqma-wallet2-api) JSON-RPC surface without arqma-wallet-rpc subprocess."
+build = "build.rs"
+
+[build-dependencies]
+cc = "1"
+
+[lib]
+name = "arqma_wallet_flutter_ffi"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+arqma-wallet-rpc = { path = "../arqma-wallet-rpc" }
+serde_json = "1"
+tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros"] }

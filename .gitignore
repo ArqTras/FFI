@@ -1,0 +1,21 @@
+# Rust / upstream
+rust/target/
+rust/arqma-rpc-upstream/
+**/target/
+
+# Local build trees inside cloned upstream (CI clones fresh; not upstream-overlay/)
+rust/arqma-rpc-upstream/**/build-*/
+rust/arqma-rpc-upstream/contrib/depends/work/
+rust/arqma-rpc-upstream/contrib/depends/built/
+rust/arqma-rpc-upstream/contrib/depends/sources/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.log
+
+# Archives produced locally
+dist/

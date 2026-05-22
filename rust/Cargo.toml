@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+  "arqma-wallet-rpc",
+  "arqma-wallet2-api",
+  "arqma-wallet-flutter-ffi",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/ArqTras/FFI"
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+strip = "symbols"
