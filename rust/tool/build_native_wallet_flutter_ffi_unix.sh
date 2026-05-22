@@ -26,7 +26,7 @@ case "$(uname -s)" in
     ;;
 esac
 
-export ARQMA_WALLET_FFI_STATIC_HYBRID="${ARQMA_WALLET_FFI_STATIC_HYBRID:-1}"
 export ARQMA_WALLET_FFI_USE_DEPENDS="${ARQMA_WALLET_FFI_USE_DEPENDS:-1}"
+export ARQMA_WALLET_FFI_STATIC_HYBRID="${ARQMA_WALLET_FFI_STATIC_HYBRID:-1}"
 cargo build -p arqma-wallet-flutter-ffi --release
 echo "OK: native wallet FFI library under $RUST_ROOT/target/release/"

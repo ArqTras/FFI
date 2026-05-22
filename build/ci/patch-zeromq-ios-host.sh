@@ -8,6 +8,12 @@ PATCH_NAME="ios-host-os.patch"
 DEPENDS_PATCH="${UP}/contrib/depends/patches/zeromq/${PATCH_NAME}"
 ZMQ_MK="${UP}/contrib/depends/packages/zeromq.mk"
 
+HOST_HINT="${ARQMA_IOS_DEPENDS_HOST:-${ARQMA_ANDROID_DEPENDS_HOST:-}}"
+if [[ "${HOST_HINT}" != *apple-ios* && "${1:-}" != *apple-ios* ]]; then
+  echo "[patch-zeromq-ios-host] skip (not an iOS depends host)"
+  exit 0
+fi
+
 [[ -f "${PATCH_SRC}" ]] || { echo "missing ${PATCH_SRC}" >&2; exit 1; }
 mkdir -p "$(dirname "${DEPENDS_PATCH}")"
 cp -f "${PATCH_SRC}" "${DEPENDS_PATCH}"

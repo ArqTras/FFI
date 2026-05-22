@@ -8,6 +8,7 @@ export PATH="/usr/bin:/bin:${HOME}/.cargo/bin:/opt/homebrew/bin:${PATH}"
 J="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
 bash "${ROOT}/build/ci/patch-arqma-epee-floor.sh" "${UPSTREAM}" 2>/dev/null || true
+export ARQMA_IOS_DEPENDS_HOST="${DEPENDS_HOST}"
 bash "${ROOT}/build/ci/patch-zeromq-ios-host.sh" "${UPSTREAM}"
 
 if [[ "${ARQMA_SKIP_IOS_DEPENDS:-0}" != "1" ]]; then
