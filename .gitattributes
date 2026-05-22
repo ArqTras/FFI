@@ -1,0 +1,5 @@
+* text=auto
+*.sh text eol=lf
+*.patch text eol=lf
+build/ci/** text eol=lf
+rust/tool/** text eol=lf

@@ -74,12 +74,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: chmod +x build/ci/*.sh rust/tool/*.sh
+      - name: Normalize shell scripts (LF)
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
       - run: bash build/ci/clone-arqma.sh
       - uses: actions/cache@v4
         with:
           path: rust/arqma-rpc-upstream/contrib/depends
-          key: ffi-linux-depends-v2-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'upstream-overlay/contrib/depends/packages/zeromq.mk') }}
+          key: ffi-linux-depends-v3-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'build/ci/patches/zeromq-ios-host-os.patch') }}
           restore-keys: ffi-linux-depends-
       - run: bash build/ci/build-arqma-linux.sh
       - name: cargo build FFI
@@ -115,12 +118,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: chmod +x build/ci/*.sh rust/tool/*.sh
+      - name: Normalize shell scripts (LF)
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i '' 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
       - run: bash build/ci/clone-arqma.sh
       - uses: actions/cache@v4
         with:
           path: rust/arqma-rpc-upstream/contrib/depends
-          key: ffi-macos-depends-v2-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'upstream-overlay/contrib/depends/packages/zeromq.mk') }}
+          key: ffi-macos-depends-v3-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'build/ci/patches/zeromq-ios-host-os.patch') }}
           restore-keys: ffi-macos-depends-
       - run: bash build/ci/build-arqma-macos.sh
       - name: cargo build FFI
@@ -171,6 +177,11 @@ jobs:
         run: |
           $dir = Split-Path -Parent (Get-Command node).Source
           Add-Content -Path $env:GITHUB_ENV -Value "ARQMA_CI_WINDOWS_NODE_DIR=$dir"
+      - name: Normalize shell scripts (LF)
+        shell: bash
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
       - name: Clone Arqma upstream (patches)
         shell: bash
         run: bash build/ci/clone-arqma.sh
@@ -238,12 +249,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: chmod +x build/ci/*.sh rust/tool/*.sh
+      - name: Normalize shell scripts (LF)
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
       - run: bash build/ci/clone-arqma.sh
       - uses: actions/cache@v4
         with:
           path: rust/arqma-rpc-upstream/contrib/depends
-          key: ffi-android-depends-v2-${{ hashFiles('upstream-overlay/**', 'rust/tool/build_android_wallet_merged.sh') }}
+          key: ffi-android-depends-v3-${{ hashFiles('build/ci/patch-arqma-slow-hash-typo.sh', 'upstream-overlay/**') }}
           restore-keys: ffi-android-depends-
       - name: Build Android FFI
         run: |
@@ -278,7 +292,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: chmod +x build/ci/*.sh rust/tool/*.sh
+      - name: Normalize shell scripts (LF)
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i '' 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
       - run: bash build/ci/clone-arqma.sh
       - name: Build iOS FFI
         env:

@@ -11,4 +11,3 @@
      *darwin*)
          # Define on Darwin to enable all library features
          CPPFLAGS="-D_DARWIN_C_SOURCE $CPPFLAGS"
-         libzmq_pedantic="no"

@@ -1,16 +1,1 @@
-﻿# Homebrew formulae for macOS native Arqma / wallet_merged + FFI (Desktop release CI).
-# Install locally: `brew bundle install --file=build/ci/Brewfile`
-# After changing this file, run the same locally and commit when CI should match your Mac.
-
-brew "cmake"
-brew "pkg-config"
-brew "boost"
-brew "openssl@3"
-brew "libsodium"
-brew "zeromq"
-brew "unbound"
-brew "readline"
-brew "hidapi"
-brew "icu4c"
-brew "lmdb"
-brew "xz"
+# Homebrew formulae for macOS native Arqma / wallet_merged + FFI (Desktop release CI). # Install locally: `brew bundle install --file=build/ci/Brewfile` # After changing this file, run the same locally and commit when CI should match your Mac.  brew "cmake" brew "pkg-config" brew "boost" brew "openssl@3" brew "libsodium" brew "zeromq" brew "unbound" brew "readline" brew "hidapi" brew "icu4c" brew "lmdb" brew "xz"
