@@ -279,10 +279,6 @@ jobs:
           node-version: "22"
       - run: chmod +x build/ci/*.sh rust/tool/*.sh
       - run: bash build/ci/clone-arqma.sh
-      - name: Patch zeromq for iOS cross-build
-        run: |
-          bash build/ci/patch-zeromq-ios-host.sh rust/arqma-rpc-upstream || true
-          bash build/ci/patch-zeromq-configure-ios.sh rust/arqma-rpc-upstream || true
       - name: Build iOS FFI
         env:
           BUILD_IOS_SIM: "1"
