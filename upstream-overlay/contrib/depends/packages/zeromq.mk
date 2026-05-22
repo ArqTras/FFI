@@ -22,7 +22,7 @@ define $(package)_config_cmds
 endef
 
 define $(package)_build_cmds
-  $(MAKE) $($(package)_build_opts) src/libzmq.la
+  $(MAKE) MAINTAINER_MODE=0 $($(package)_build_opts) src/libzmq.la
 endef
 
 define $(package)_stage_cmds

@@ -41,25 +41,39 @@ new_block = (
     "endef"
 )
 
-if (
-    "bash $(BASEDIR)/patches/zeromq/patch-zeromq-configure-ios.sh configure" in t
-    and "patch-zeromq-configure-ac-ios.sh" not in t
-    and "ios-host-os.patch" not in t
-):
+needs_preprocess_fix = (
+    "patch-zeromq-configure-ac-ios.sh" in t
+    or "ios-host-os.patch" in t
+    or "bash $(BASEDIR)/patches/zeromq/patch-zeromq-configure-ios.sh configure" not in t
+)
+needs_build_fix = "MAINTAINER_MODE=0" not in t
+if not needs_preprocess_fix and not needs_build_fix:
     print("[patch-zeromq-ios-host] zeromq.mk already patched")
     sys.exit(0)
 
-t, n = re.subn(
-    r"define \$\(package\)_preprocess_cmds\n.*?\nendef",
-    new_block,
-    t,
-    count=1,
-    flags=re.DOTALL,
-)
-if n != 1:
-    raise SystemExit("zeromq.mk: preprocess_cmds block not found")
+if needs_preprocess_fix:
+    t, n = re.subn(
+        r"define \$\(package\)_preprocess_cmds\n.*?\nendef",
+        new_block,
+        t,
+        count=1,
+        flags=re.DOTALL,
+    )
+    if n != 1:
+        raise SystemExit("zeromq.mk: preprocess_cmds block not found")
+    t = re.sub(r"\$\(package\)_patches=ios-host-os\.patch\n", "", t)
 
-t = re.sub(r"\$\(package\)_patches=ios-host-os\.patch\n", "", t)
+if needs_build_fix:
+    t, n = re.subn(
+        r"define \$\(package\)_build_cmds\n  \$\(MAKE\) (\$\(\(package\)_build_opts\) )?src/libzmq\.la\nendef",
+        "define $(package)_build_cmds\n"
+        "  $(MAKE) MAINTAINER_MODE=0 $($(package)_build_opts) src/libzmq.la\n"
+        "endef",
+        t,
+        count=1,
+    )
+    if n != 1:
+        raise SystemExit("zeromq.mk: build_cmds block not found")
 
 p.write_text(t)
 print("[patch-zeromq-ios-host] updated", p)

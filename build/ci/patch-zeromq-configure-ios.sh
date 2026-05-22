@@ -11,4 +11,7 @@ perl -i -pe '
     $_ = "    *ios*)\n        CPPFLAGS=\"-D_DARWIN_C_SOURCE \$CPPFLAGS\"\n        libzmq_pedantic=\"no\"\n\nprintf \"%s\\n\" \"#define ZMQ_HAVE_OSX 1\" >>confdefs.h\n\n        ;;\n" . $_;
   }
 ' "${CFG}"
+# Patching `configure` makes it newer than configure.ac; libzmq Makefile may then rerun aclocal.
+touch -r "${CFG}" configure.ac 2>/dev/null || true
+[[ -f aclocal.m4 ]] && touch -r "${CFG}" aclocal.m4 2>/dev/null || true
 echo "[patch-zeromq-configure-ios] ${CFG}"
