@@ -82,7 +82,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: rust/arqma-rpc-upstream/contrib/depends
-          key: ffi-linux-depends-v3-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'build/ci/patches/zeromq-ios-host-os.patch') }}
+          key: ffi-linux-depends-v4-${{ hashFiles('upstream-overlay/src/wallet/CMakeLists.txt', 'build/ci/patch-arqma-slow-hash-typo.sh') }}
           restore-keys: ffi-linux-depends-
       - run: bash build/ci/build-arqma-linux.sh
       - name: cargo build FFI
@@ -257,7 +257,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: rust/arqma-rpc-upstream/contrib/depends
-          key: ffi-android-depends-v3-${{ hashFiles('build/ci/patch-arqma-slow-hash-typo.sh', 'upstream-overlay/**') }}
+          key: ffi-android-depends-v4-${{ hashFiles('upstream-overlay/src/wallet/CMakeLists.txt', 'build/ci/patch-arqma-slow-hash-typo.sh') }}
           restore-keys: ffi-android-depends-
       - name: Build Android FFI
         run: |

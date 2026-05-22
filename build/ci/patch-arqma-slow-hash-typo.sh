@@ -7,6 +7,10 @@ if [[ ! -f "${F}" ]]; then
   exit 0
 fi
 if grep -q 'reuslt' "${F}"; then
-  sed -i 's/reuslt/result/g' "${F}"
+  if [[ "$(uname -s)" == Darwin ]]; then
+    sed -i '' 's/reuslt/result/g' "${F}"
+  else
+    sed -i 's/reuslt/result/g' "${F}"
+  fi
   echo "[patch-arqma-slow-hash-typo] fixed reuslt in ${F}"
 fi

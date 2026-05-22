@@ -195,10 +195,11 @@ if(BUILD_GUI_DEPS)
           COMMENT "Fold epee/easylogging/randomx into libwallet_merged.a (Android GNU ar MRI)"
           VERBATIM)
       else()
-        # MinGW (Windows), Linux, BSD GNU binutils `ar -M` MRI
+        # MinGW / Linux / BSD: depends may set CMAKE_AR to llvm-ar (no MRI); use host GNU ar.
+        find_program(ARQMA_WALLET_MERGE_AR NAMES ar gcc-ar REQUIRED)
         add_custom_command(TARGET wallet_merged POST_BUILD
           COMMAND ${CMAKE_COMMAND}
-            -DCMAKE_AR=${CMAKE_AR}
+            -DCMAKE_AR=${ARQMA_WALLET_MERGE_AR}
             -DWALLET_MERGED=$<TARGET_FILE:wallet_merged>
             -DLIBEPEE=$<TARGET_FILE:epee>
             -DLIBEASYLOGGING=$<TARGET_FILE:easylogging>
