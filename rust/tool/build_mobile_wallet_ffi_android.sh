@@ -84,10 +84,16 @@ if [[ -n "${NDK_HOME}" ]]; then
   for prebuilt in "${NDK_HOME}"/toolchains/llvm/prebuilt/*; do
     export CC_aarch64_linux_android="${prebuilt}/bin/aarch64-linux-android21-clang"
     export CXX_aarch64_linux_android="${prebuilt}/bin/aarch64-linux-android21-clang++"
+    export AR_aarch64_linux_android="${prebuilt}/bin/llvm-ar"
     export CC_x86_64_linux_android="${prebuilt}/bin/x86_64-linux-android21-clang"
     export CXX_x86_64_linux_android="${prebuilt}/bin/x86_64-linux-android21-clang++"
+    export AR_x86_64_linux_android="${prebuilt}/bin/llvm-ar"
     export CC_armv7_linux_androideabi="${prebuilt}/bin/armv7a-linux-androideabi21-clang"
     export CXX_armv7_linux_androideabi="${prebuilt}/bin/armv7a-linux-androideabi21-clang++"
+    export AR_armv7_linux_androideabi="${prebuilt}/bin/llvm-ar"
+    export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${prebuilt}/bin/aarch64-linux-android21-clang"
+    export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="${prebuilt}/bin/x86_64-linux-android21-clang"
+    export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="${prebuilt}/bin/armv7a-linux-androideabi21-clang"
     break
   done
   shopt -u nullglob

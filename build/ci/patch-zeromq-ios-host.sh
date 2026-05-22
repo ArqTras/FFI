@@ -3,9 +3,8 @@
 set -eu
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 UP="${1:-${ARQMA_WALLET2_UPSTREAM_DIR:-${ROOT}/rust/arqma-rpc-upstream}}"
-PATCH_SRC="${ROOT}/build/ci/patches/zeromq-ios-host-os.patch"
-PATCH_NAME="ios-host-os.patch"
-DEPENDS_PATCH="${UP}/contrib/depends/patches/zeromq/${PATCH_NAME}"
+SCRIPT_SRC="${ROOT}/build/ci/patch-zeromq-configure-ac-ios.sh"
+SCRIPT_DEST="${UP}/contrib/depends/patches/zeromq/patch-zeromq-configure-ac-ios.sh"
 ZMQ_MK="${UP}/contrib/depends/packages/zeromq.mk"
 
 HOST_HINT="${ARQMA_IOS_DEPENDS_HOST:-${ARQMA_ANDROID_DEPENDS_HOST:-}}"
@@ -14,11 +13,13 @@ if [[ "${HOST_HINT}" != *apple-ios* && "${1:-}" != *apple-ios* ]]; then
   exit 0
 fi
 
-[[ -f "${PATCH_SRC}" ]] || { echo "missing ${PATCH_SRC}" >&2; exit 1; }
-mkdir -p "$(dirname "${DEPENDS_PATCH}")"
-cp -f "${PATCH_SRC}" "${DEPENDS_PATCH}"
+[[ -f "${SCRIPT_SRC}" ]] || { echo "missing ${SCRIPT_SRC}" >&2; exit 1; }
+mkdir -p "$(dirname "${SCRIPT_DEST}")"
+cp -f "${SCRIPT_SRC}" "${SCRIPT_DEST}"
+chmod +x "${SCRIPT_DEST}"
+sed -i 's/\r$//' "${SCRIPT_DEST}" 2>/dev/null || sed -i '' 's/\r$//' "${SCRIPT_DEST}" 2>/dev/null || true
 
-if grep -q 'ios-host-os.patch' "${ZMQ_MK}" 2>/dev/null; then
+if grep -q 'patch-zeromq-configure-ac-ios.sh' "${ZMQ_MK}" 2>/dev/null; then
   echo "[patch-zeromq-ios-host] already in zeromq.mk"
   exit 0
 fi
@@ -27,12 +28,6 @@ python3 - "$ZMQ_MK" <<'PY'
 import pathlib, sys
 p = pathlib.Path(sys.argv[1])
 t = p.read_text()
-marker = "$(package)_sha256_hash="
-idx = t.find(marker)
-if idx < 0:
-    raise SystemExit("zeromq.mk: sha256_hash line not found")
-end = t.find("\n", idx)
-t = t[: end + 1] + "$(package)_patches=ios-host-os.patch\n" + t[end + 1 :]
 old = (
     "define $(package)_preprocess_cmds\n"
     "  cp -f $(BASEDIR)/config.guess $(BASEDIR)/config.sub config\n"
@@ -41,13 +36,28 @@ old = (
 new = (
     "define $(package)_preprocess_cmds\n"
     "  cp -f $(BASEDIR)/config.guess $(BASEDIR)/config.sub config && \\\n"
-    "  patch -p1 < $($(package)_patch_dir)/ios-host-os.patch\n"
+    "  bash $($(package)_patch_dir)/patch-zeromq-configure-ac-ios.sh\n"
     "endef"
 )
+if "patch-zeromq-configure-ac-ios.sh" in t:
+    sys.exit(0)
 if old not in t:
-    raise SystemExit("zeromq.mk: preprocess_cmds block not found")
-p.write_text(t.replace(old, new, 1))
+    old2 = (
+        "define $(package)_preprocess_cmds\n"
+        "  cp -f $(BASEDIR)/config.guess $(BASEDIR)/config.sub config && \\\n"
+        "  patch -p1 < $($(package)_patch_dir)/ios-host-os.patch\n"
+        "endef"
+    )
+    if old2 in t:
+        t = t.replace(old2, new, 1)
+    else:
+        raise SystemExit("zeromq.mk: preprocess_cmds block not found")
+else:
+    t = t.replace(old, new, 1)
+# Drop broken unified-diff patch entry if present.
+t = t.replace("$(package)_patches=ios-host-os.patch\n", "")
+p.write_text(t)
 print("[patch-zeromq-ios-host] updated", p)
 PY
 
-echo "[patch-zeromq-ios-host] ${DEPENDS_PATCH}"
+echo "[patch-zeromq-ios-host] ${SCRIPT_DEST}"
