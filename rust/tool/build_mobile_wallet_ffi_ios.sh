@@ -7,9 +7,12 @@ cd "${ROOT}/rust"
 # rustup toolchain (iOS std) must win over Homebrew rustc on PATH.
 export PATH="${HOME}/.cargo/bin:/opt/homebrew/bin:${PATH}"
 
-if ! rustup target list --installed --toolchain 1.92.0-aarch64-apple-darwin 2>/dev/null | grep -q 'aarch64-apple-ios'; then
-  rustup target add aarch64-apple-ios aarch64-apple-ios-sim --toolchain 1.92.0-aarch64-apple-darwin
-fi
+TC="${RUSTUP_TOOLCHAIN:-$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${ROOT}/rust-toolchain.toml" | head -1)}"
+for t in aarch64-apple-ios aarch64-apple-ios-sim; do
+  if ! rustup target list --installed --toolchain "${TC}" 2>/dev/null | grep -q "${t}"; then
+    rustup target add "${t}" --toolchain "${TC}"
+  fi
+done
 
 # Upstream wallet_merged must exist for the iOS triple (see rust/docs/NATIVE_WALLET2.md).
 export ARQMA_WALLET2_UPSTREAM_DIR="${ARQMA_WALLET2_UPSTREAM_DIR:-${ROOT}/rust/arqma-rpc-upstream}"

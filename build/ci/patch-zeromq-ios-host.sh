@@ -12,9 +12,36 @@ ZMQ_MK="${UP}/contrib/depends/packages/zeromq.mk"
 mkdir -p "$(dirname "${DEPENDS_PATCH}")"
 cp -f "${PATCH_SRC}" "${DEPENDS_PATCH}"
 
-if ! grep -q 'ios-host-os.patch' "${ZMQ_MK}"; then
-  perl -i -pe 's|^(\$\(package\)_sha256_hash=.*)$/$1\n$(package)_patches=ios-host-os.patch/' "${ZMQ_MK}"
-  perl -0777 -i -pe 's|define \$\(package\)_preprocess_cmds\n  cp -f \$\(BASEDIR\)/config.guess \$\(BASEDIR\)/config.sub config\nendef|define $(package)_preprocess_cmds\n  cp -f $(BASEDIR)/config.guess $(BASEDIR)/config.sub config && \\\n  patch -p1 < $$($(package)_patch_dir)/ios-host-os.patch\nendef|' "${ZMQ_MK}"
+if grep -q 'ios-host-os.patch' "${ZMQ_MK}" 2>/dev/null; then
+  echo "[patch-zeromq-ios-host] already in zeromq.mk"
+  exit 0
 fi
+
+python3 - "$ZMQ_MK" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+t = p.read_text()
+marker = "$(package)_sha256_hash="
+idx = t.find(marker)
+if idx < 0:
+    raise SystemExit("zeromq.mk: sha256_hash line not found")
+end = t.find("\n", idx)
+t = t[: end + 1] + "$(package)_patches=ios-host-os.patch\n" + t[end + 1 :]
+old = (
+    "define $(package)_preprocess_cmds\n"
+    "  cp -f $(BASEDIR)/config.guess $(BASEDIR)/config.sub config\n"
+    "endef"
+)
+new = (
+    "define $(package)_preprocess_cmds\n"
+    "  cp -f $(BASEDIR)/config.guess $(BASEDIR)/config.sub config && \\\n"
+    "  patch -p1 < $($(package)_patch_dir)/ios-host-os.patch\n"
+    "endef"
+)
+if old not in t:
+    raise SystemExit("zeromq.mk: preprocess_cmds block not found")
+p.write_text(t.replace(old, new, 1))
+print("[patch-zeromq-ios-host] updated", p)
+PY
 
 echo "[patch-zeromq-ios-host] ${DEPENDS_PATCH}"

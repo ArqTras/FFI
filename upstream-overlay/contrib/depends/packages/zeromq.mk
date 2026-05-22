@@ -3,6 +3,7 @@ $(package)_version=4.3.5
 $(package)_download_path=https://github.com/zeromq/libzmq/releases/download/v$($(package)_version)/
 $(package)_file_name=$(package)-$($(package)_version).tar.gz
 $(package)_sha256_hash=6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a913bfab43
+$(package)_patches=ios-host-os.patch
 $(package)_dependencies=sodium
 
 define $(package)_set_vars
@@ -14,7 +15,8 @@ define $(package)_set_vars
 endef
 
 define $(package)_preprocess_cmds
-  cp -f $(BASEDIR)/config.guess $(BASEDIR)/config.sub config
+  cp -f $(BASEDIR)/config.guess $(BASEDIR)/config.sub config && \
+  patch -p1 < $($(package)_patch_dir)/ios-host-os.patch
 endef
 
 define $(package)_config_cmds
