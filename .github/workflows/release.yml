@@ -216,11 +216,15 @@ jobs:
           name: ffi-windows-x86_64-gnu
           path: dist/arqma-wallet-ffi-windows-x86_64-gnu-*.zip
 
-  ffi-android:
-    name: Android (arm64 + x86_64)
+  ffi-android-arm64:
+    name: Android arm64
     needs: [resolve-version]
     runs-on: ubuntu-22.04
-    timeout-minutes: 360
+    timeout-minutes: 240
+    env:
+      BUILD_ANDROID_ARM64: "1"
+      BUILD_ANDROID_X86_64: "0"
+      ARQMA_ANDROID_DEPENDS_HOST: aarch64-linux-android
     steps:
       - uses: actions/checkout@v5
       - id: pinned
@@ -228,11 +232,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
-      - run: rustup target add aarch64-linux-android x86_64-linux-android
+      - run: rustup target add aarch64-linux-android
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
-          key: ffi-android-${{ needs.resolve-version.outputs.version }}
+          key: ffi-android-arm64-${{ needs.resolve-version.outputs.version }}
       - name: Linux + Android build dependencies
         run: |
           sudo apt-get update
@@ -257,18 +261,76 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: rust/arqma-rpc-upstream/contrib/depends
-          key: ffi-android-depends-v4-${{ hashFiles('upstream-overlay/src/wallet/CMakeLists.txt', 'build/ci/patch-arqma-slow-hash-typo.sh') }}
-          restore-keys: ffi-android-depends-
-      - name: Build Android FFI
+          key: ffi-android-aarch64-depends-v5-${{ hashFiles('upstream-overlay/src/wallet/CMakeLists.txt', 'build/ci/patch-arqma-slow-hash-typo.sh') }}
+          restore-keys: ffi-android-aarch64-depends-
+      - name: Build Android FFI (arm64)
         run: |
           export PATH="${HOME}/.cargo/bin:${PATH}"
           export ARQMA_SKIP_DEPENDS_CRLF=1
           bash rust/tool/build_mobile_wallet_ffi_android.sh
-      - run: bash build/ci/package-ffi-artifact.sh android "${{ needs.resolve-version.outputs.version }}"
+      - run: bash build/ci/package-ffi-artifact.sh android-arm64 "${{ needs.resolve-version.outputs.version }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: ffi-android
-          path: dist/arqma-wallet-ffi-android-*.zip
+          name: ffi-android-arm64
+          path: dist/arqma-wallet-ffi-android-arm64-*.zip
+
+  ffi-android-x86_64:
+    name: Android x86_64
+    needs: [resolve-version]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      BUILD_ANDROID_ARM64: "0"
+      BUILD_ANDROID_X86_64: "1"
+      ARQMA_ANDROID_DEPENDS_HOST: x86_64-linux-android
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - run: rustup target add x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: ffi-android-x86_64-${{ needs.resolve-version.outputs.version }}
+      - name: Linux + Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl cmake ninja-build pkg-config clang \
+            python3 python3-pip unzip zip git libssl-dev libboost-all-dev
+      - name: Install Android NDK r28c
+        run: |
+          set -eu
+          curl -fsSL -o ndk.zip https://dl.google.com/android/repository/android-ndk-r28c-linux.zip
+          unzip -q ndk.zip
+          echo "ANDROID_NDK_HOME=${GITHUB_WORKSPACE}/android-ndk-r28c" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=${GITHUB_WORKSPACE}/android-ndk-r28c" >> "$GITHUB_ENV"
+          echo "ARQMA_USE_SDK_ANDROID_NDK=1" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Normalize shell scripts (LF)
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
+      - run: bash build/ci/clone-arqma.sh
+      - uses: actions/cache@v4
+        with:
+          path: rust/arqma-rpc-upstream/contrib/depends
+          key: ffi-android-x86_64-depends-v5-${{ hashFiles('upstream-overlay/src/wallet/CMakeLists.txt', 'build/ci/patch-arqma-slow-hash-typo.sh') }}
+          restore-keys: ffi-android-x86_64-depends-
+      - name: Build Android FFI (x86_64)
+        run: |
+          export PATH="${HOME}/.cargo/bin:${PATH}"
+          export ARQMA_SKIP_DEPENDS_CRLF=1
+          bash rust/tool/build_mobile_wallet_ffi_android.sh
+      - run: bash build/ci/package-ffi-artifact.sh android-x86_64 "${{ needs.resolve-version.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffi-android-x86_64
+          path: dist/arqma-wallet-ffi-android-x86_64-*.zip
 
   ffi-ios:
     name: iOS (device + simulator)
@@ -315,7 +377,8 @@ jobs:
       - ffi-linux
       - ffi-macos
       - ffi-windows
-      - ffi-android
+      - ffi-android-arm64
+      - ffi-android-x86_64
       - ffi-ios
     runs-on: ubuntu-latest
     steps:

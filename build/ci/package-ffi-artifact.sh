@@ -17,8 +17,15 @@ case "${PLATFORM}" in
   windows-x86_64-gnu)
     cp "${ROOT}/rust/target/x86_64-pc-windows-gnu/release"/arqma_wallet_flutter_ffi.dll "${STAGE}/"
     ;;
-  android)
-    for arch in aarch64-linux-android x86_64-linux-android; do
+  android|android-arm64|android-x86_64)
+    arches=()
+    case "${PLATFORM}" in
+      android-arm64) arches=(aarch64-linux-android) ;;
+      android-x86_64) arches=(x86_64-linux-android) ;;
+      android) arches=(aarch64-linux-android x86_64-linux-android) ;;
+    esac
+    found=0
+    for arch in "${arches[@]}"; do
       jni=""
       case "${arch}" in
         aarch64-linux-android) jni=arm64-v8a ;;
@@ -28,8 +35,13 @@ case "${PLATFORM}" in
       if [[ -f "${so}" ]]; then
         mkdir -p "${STAGE}/jniLibs/${jni}"
         cp "${so}" "${STAGE}/jniLibs/${jni}/"
+        found=1
       fi
     done
+    if [[ "${found}" -eq 0 ]]; then
+      echo "no Android FFI .so for ${PLATFORM}" >&2
+      exit 1
+    fi
     ;;
   ios)
     dev="${ROOT}/rust/target/aarch64-apple-ios/release/libarqma_wallet_flutter_ffi.dylib"

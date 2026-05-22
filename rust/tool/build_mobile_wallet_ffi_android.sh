@@ -11,17 +11,20 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${ROOT}/rust/target}"
 export PATH="${HOME}/.cargo/bin:${PATH}"
 export ARQMA_WALLET2_UPSTREAM_DIR="${ARQMA_WALLET2_UPSTREAM_DIR:-${ROOT}/rust/arqma-rpc-upstream}"
 
-# Phones + emulator unless narrowed.
-TARGETS=(aarch64-linux-android)
-BUILD_X86=1
-if [[ "${BUILD_ANDROID_X86_64:-1}" == "0" ]]; then
-  BUILD_X86=0
+# Narrow with BUILD_ANDROID_ARM64 / BUILD_ANDROID_X86_64 (CI uses one arch per job).
+TARGETS=()
+if [[ "${BUILD_ANDROID_ARM64:-1}" == "1" ]]; then
+  TARGETS+=(aarch64-linux-android)
 fi
 if [[ "${BUILD_ANDROID_X86_64:-1}" == "1" ]]; then
   TARGETS+=(x86_64-linux-android)
 fi
 if [[ "${BUILD_ANDROID_ARMV7:-0}" == "1" ]]; then
   TARGETS+=(armv7-linux-androideabi)
+fi
+if [[ ${#TARGETS[@]} -eq 0 ]]; then
+  echo "No Android targets selected (set BUILD_ANDROID_ARM64 and/or BUILD_ANDROID_X86_64)" >&2
+  exit 1
 fi
 
 for t in "${TARGETS[@]}"; do
