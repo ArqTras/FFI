@@ -47,7 +47,8 @@ needs_preprocess_fix = (
     or "bash $(BASEDIR)/patches/zeromq/patch-zeromq-configure-ios.sh configure" not in t
 )
 needs_build_fix = "MAINTAINER_MODE=0" not in t
-if not needs_preprocess_fix and not needs_build_fix:
+needs_config_fix = "--disable-maintainer-mode" not in t
+if not needs_preprocess_fix and not needs_build_fix and not needs_config_fix:
     print("[patch-zeromq-ios-host] zeromq.mk already patched")
     sys.exit(0)
 
@@ -74,6 +75,24 @@ if needs_build_fix:
     )
     if n != 1:
         raise SystemExit("zeromq.mk: build_cmds block not found")
+
+if needs_config_fix:
+    t, n = re.subn(
+        r"(\$\(package\)_config_opts=.*)(--disable-Werror)",
+        r"\1\2 --disable-maintainer-mode",
+        t,
+        count=1,
+    )
+    if n != 1:
+        t2, n2 = re.subn(
+            r"(\$\(package\)_config_opts=[^\n]+)",
+            r"\1 --disable-maintainer-mode",
+            t,
+            count=1,
+        )
+        if n2 != 1:
+            raise SystemExit("zeromq.mk: config_opts line not found")
+        t = t2
 
 p.write_text(t)
 print("[patch-zeromq-ios-host] updated", p)

@@ -6,7 +6,7 @@ $(package)_sha256_hash=6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a91
 $(package)_dependencies=sodium
 
 define $(package)_set_vars
-  $(package)_config_opts=--enable-static --disable-shared --disable-curve-keygen --enable-curve --disable-drafts --disable-libunwind --with-libsodium --without-pgm --without-norm --without-vmci --without-docs --disable-Werror
+  $(package)_config_opts=--enable-static --disable-shared --disable-curve-keygen --enable-curve --disable-drafts --disable-libunwind --with-libsodium --without-pgm --without-norm --without-vmci --without-docs --disable-Werror --disable-maintainer-mode
   $(package)_cxxflags_linux=-std=c++17
   $(package)_cxxflags_darwin=-std=c++17
   $(package)_cxxflags_mingw32=-std=c++17
