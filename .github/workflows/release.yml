@@ -281,7 +281,8 @@ jobs:
       - run: bash build/ci/clone-arqma.sh
       - name: Build iOS FFI
         env:
-          BUILD_IOS_SIM: "1"
+          # Device first; simulator needs iphonesimulator SDK host (future).
+          BUILD_IOS_SIM: "0"
         run: bash rust/tool/build_mobile_wallet_ffi_ios.sh
       - run: bash build/ci/package-ffi-artifact.sh ios "${{ needs.resolve-version.outputs.version }}"
       - uses: actions/upload-artifact@v4

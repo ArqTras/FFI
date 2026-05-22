@@ -34,8 +34,18 @@ case "${PLATFORM}" in
   ios)
     dev="${ROOT}/rust/target/aarch64-apple-ios/release/libarqma_wallet_flutter_ffi.dylib"
     sim="${ROOT}/rust/target/aarch64-apple-ios-sim/release/libarqma_wallet_flutter_ffi.dylib"
-    [[ -f "${dev}" ]] && mkdir -p "${STAGE}/device" && cp "${dev}" "${STAGE}/device/"
-    [[ -f "${sim}" ]] && mkdir -p "${STAGE}/simulator" && cp "${sim}" "${STAGE}/simulator/"
+    if [[ -f "${dev}" ]]; then
+      mkdir -p "${STAGE}/device"
+      cp "${dev}" "${STAGE}/device/"
+    fi
+    if [[ -f "${sim}" ]]; then
+      mkdir -p "${STAGE}/simulator"
+      cp "${sim}" "${STAGE}/simulator/"
+    fi
+    if [[ ! -f "${dev}" && ! -f "${sim}" ]]; then
+      echo "no iOS FFI dylib built" >&2
+      exit 1
+    fi
     ;;
   *)
     echo "unknown platform: ${PLATFORM}" >&2
