@@ -1,6 +1,6 @@
 --- a/configure.ac
 +++ b/configure.ac
-@@ -274,10 +274,16 @@ case "${host_os}" in
+@@ -276,6 +276,12 @@ case "${host_os}" in
          AC_DEFINE(ZMQ_HAVE_DRAGONFLY, 1, [Have DragonFly OS])
          ;;
 +    *ios*)
@@ -12,5 +12,3 @@
          # Define on Darwin to enable all library features
          CPPFLAGS="-D_DARWIN_C_SOURCE $CPPFLAGS"
          libzmq_pedantic="no"
-         AC_DEFINE(ZMQ_HAVE_OSX, 1, [Have DarwinOSX OS])
-         ;;
