@@ -17,8 +17,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: ffi-release-${{ github.ref }}
-  cancel-in-progress: false
+  group: ffi-release-${{ github.repository }}-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: true
 
 env:
   ARQMA_WALLET2_UPSTREAM_DIR: ${{ github.workspace }}/rust/arqma-rpc-upstream
@@ -52,7 +52,7 @@ jobs:
   ffi-linux:
     name: Linux x86_64
     needs: [resolve-version]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
@@ -71,12 +71,15 @@ jobs:
           sudo apt-get install -y build-essential curl cmake ninja-build pkg-config clang \
             libboost-all-dev libssl-dev libzmq3-dev libsodium-dev libhidapi-dev libunbound-dev \
             libreadline-dev liblmdb-dev libusb-1.0-0-dev libudev-dev libicu-dev python3 zip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: chmod +x build/ci/*.sh rust/tool/*.sh
       - run: bash build/ci/clone-arqma.sh
       - uses: actions/cache@v4
         with:
           path: rust/arqma-rpc-upstream/contrib/depends
-          key: ffi-linux-depends-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'upstream-overlay/**') }}
+          key: ffi-linux-depends-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'build/ci/patch-arqma-mingw-gui.js', 'upstream-overlay/**') }}
           restore-keys: ffi-linux-depends-
       - run: bash build/ci/build-arqma-linux.sh
       - name: cargo build FFI
@@ -110,12 +113,15 @@ jobs:
       - name: Homebrew deps
         run: |
           brew install cmake boost openssl zeromq libsodium hidapi unbound readline lmdb zip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: chmod +x build/ci/*.sh rust/tool/*.sh
       - run: bash build/ci/clone-arqma.sh
       - uses: actions/cache@v4
         with:
           path: rust/arqma-rpc-upstream/contrib/depends
-          key: ffi-macos-depends-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'upstream-overlay/**') }}
+          key: ffi-macos-depends-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'build/ci/patch-arqma-mingw-gui.js', 'upstream-overlay/**') }}
           restore-keys: ffi-macos-depends-
       - run: bash build/ci/build-arqma-macos.sh
       - name: cargo build FFI
@@ -158,11 +164,22 @@ jobs:
             mingw-w64-x86_64-zeromq mingw-w64-x86_64-hidapi mingw-w64-x86_64-readline
             mingw-w64-x86_64-ncurses mingw-w64-x86_64-unbound mingw-w64-x86_64-lmdb
             mingw-w64-x86_64-icu mingw-w64-x86_64-zlib mingw-w64-x86_64-libunwind git zip
-      - name: Clone upstream + wallet_merged
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Export Node directory for MSYS2
+        shell: pwsh
+        run: |
+          $dir = Split-Path -Parent (Get-Command node).Source
+          Add-Content -Path $env:GITHUB_ENV -Value "ARQMA_CI_WINDOWS_NODE_DIR=$dir"
+      - name: Clone Arqma upstream (patches)
+        shell: bash
+        run: bash build/ci/clone-arqma.sh
+      - name: Build Arqma wallet_merged (Windows MinGW)
         shell: msys2 {0}
         run: |
           export ARQMA_WALLET2_UPSTREAM_DIR="$(cygpath -u "$GITHUB_WORKSPACE")/rust/arqma-rpc-upstream"
-          bash "$(cygpath -u "$GITHUB_WORKSPACE")/build/ci/clone-arqma.sh"
+          export ARQMA_CI_WINDOWS_NODE_DIR="$(cygpath -u "${ARQMA_CI_WINDOWS_NODE_DIR:-}")"
           bash "$(cygpath -u "$GITHUB_WORKSPACE")/build/ci/build-arqma-mingw.sh"
       - name: cargo build FFI
         working-directory: rust
@@ -190,7 +207,7 @@ jobs:
   ffi-android:
     name: Android (arm64 + x86_64)
     needs: [resolve-version]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
@@ -217,12 +234,15 @@ jobs:
           echo "ANDROID_NDK_HOME=${GITHUB_WORKSPACE}/android-ndk-r28c" >> "$GITHUB_ENV"
           echo "ANDROID_NDK=${GITHUB_WORKSPACE}/android-ndk-r28c" >> "$GITHUB_ENV"
           echo "ARQMA_USE_SDK_ANDROID_NDK=1" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: chmod +x build/ci/*.sh rust/tool/*.sh
       - run: bash build/ci/clone-arqma.sh
       - uses: actions/cache@v4
         with:
           path: rust/arqma-rpc-upstream/contrib/depends
-          key: ffi-android-depends-${{ hashFiles('upstream-overlay/**', 'rust/tool/build_android_wallet_merged.sh') }}
+          key: ffi-android-depends-${{ hashFiles('build/ci/patch-arqma-mingw-gui.js', 'upstream-overlay/**', 'rust/tool/build_android_wallet_merged.sh') }}
           restore-keys: ffi-android-depends-
       - name: Build Android FFI
         run: |
@@ -254,6 +274,9 @@ jobs:
           key: ffi-ios-${{ needs.resolve-version.outputs.version }}
       - name: Homebrew deps
         run: brew install cmake boost openssl zeromq libsodium hidapi unbound readline lmdb zip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: chmod +x build/ci/*.sh rust/tool/*.sh
       - run: bash build/ci/clone-arqma.sh
       - name: Patch zeromq for iOS cross-build

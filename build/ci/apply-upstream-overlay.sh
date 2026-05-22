@@ -7,5 +7,9 @@ OVERLAY="$ROOT/upstream-overlay"
 if [[ ! -d "$OVERLAY" ]]; then
   exit 0
 fi
-rsync -a "$OVERLAY/" "$UP/"
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a "$OVERLAY/" "$UP/"
+else
+  cp -a "$OVERLAY/." "$UP/"
+fi
 echo "[apply-upstream-overlay] applied to $UP"
