@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# libzmq 4.3.5: autoconf rejects host_os=ios; treat like Darwin for aarch64-apple-ios depends.
+# libzmq 4.3.5 / aarch64-apple-ios: pre-generated `configure` must accept host_os=ios.
+#
+# Mobile branch: ios-host-os.patch edits configure.ac (local depends build). That makes
+# libzmq's Makefile rerun aclocal/automake — fine on a dev Mac with autotools installed.
+# Mobile release CI sets ARQMA_SKIP_IOS_DEPENDS=1 and never builds depends zeromq.
+#
+# FFI release CI builds full depends on macOS runners without automake — patch only
+# `configure` (see patch-zeromq-configure-ios.sh), not configure.ac.
 set -eu
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 UP="${1:-${ARQMA_WALLET2_UPSTREAM_DIR:-${ROOT}/rust/arqma-rpc-upstream}}"
-CFG_AC_SRC="${ROOT}/build/ci/patch-zeromq-configure-ac-ios.sh"
 CFG_IOS_SRC="${ROOT}/build/ci/patch-zeromq-configure-ios.sh"
 DEPENDS_ZMQ="${UP}/contrib/depends/patches/zeromq"
 ZMQ_MK="${UP}/contrib/depends/packages/zeromq.mk"
@@ -14,17 +20,13 @@ if [[ "${HOST_HINT}" != *apple-ios* && "${1:-}" != *apple-ios* ]]; then
   exit 0
 fi
 
-[[ -f "${CFG_AC_SRC}" ]] || { echo "missing ${CFG_AC_SRC}" >&2; exit 1; }
 [[ -f "${CFG_IOS_SRC}" ]] || { echo "missing ${CFG_IOS_SRC}" >&2; exit 1; }
 mkdir -p "${DEPENDS_ZMQ}"
-cp -f "${CFG_AC_SRC}" "${DEPENDS_ZMQ}/patch-zeromq-configure-ac-ios.sh"
 cp -f "${CFG_IOS_SRC}" "${DEPENDS_ZMQ}/patch-zeromq-configure-ios.sh"
-chmod +x "${DEPENDS_ZMQ}/patch-zeromq-configure-ac-ios.sh" "${DEPENDS_ZMQ}/patch-zeromq-configure-ios.sh"
-for f in "${DEPENDS_ZMQ}"/*.sh; do
-  [[ -f "${f}" ]] || continue
-  sed -i 's/\r$//' "${f}" 2>/dev/null || sed -i '' 's/\r$//' "${f}" 2>/dev/null || true
-done
-rm -f "${DEPENDS_ZMQ}/ios-host-os.patch" 2>/dev/null || true
+chmod +x "${DEPENDS_ZMQ}/patch-zeromq-configure-ios.sh"
+sed -i 's/\r$//' "${DEPENDS_ZMQ}/patch-zeromq-configure-ios.sh" 2>/dev/null \
+  || sed -i '' 's/\r$//' "${DEPENDS_ZMQ}/patch-zeromq-configure-ios.sh" 2>/dev/null || true
+rm -f "${DEPENDS_ZMQ}/patch-zeromq-configure-ac-ios.sh" "${DEPENDS_ZMQ}/ios-host-os.patch" 2>/dev/null || true
 
 python3 - "$ZMQ_MK" <<'PY'
 import pathlib, re, sys
@@ -35,14 +37,13 @@ t = p.read_text()
 new_block = (
     "define $(package)_preprocess_cmds\n"
     "  cp -f $(BASEDIR)/config.guess $(BASEDIR)/config.sub config && \\\n"
-    "  bash $(BASEDIR)/patches/zeromq/patch-zeromq-configure-ac-ios.sh && \\\n"
     "  bash $(BASEDIR)/patches/zeromq/patch-zeromq-configure-ios.sh configure\n"
     "endef"
 )
 
 if (
-    "bash $(BASEDIR)/patches/zeromq/patch-zeromq-configure-ac-ios.sh" in t
-    and "patch-zeromq-configure-ios.sh configure" in t
+    "bash $(BASEDIR)/patches/zeromq/patch-zeromq-configure-ios.sh configure" in t
+    and "patch-zeromq-configure-ac-ios.sh" not in t
     and "ios-host-os.patch" not in t
 ):
     print("[patch-zeromq-ios-host] zeromq.mk already patched")
@@ -64,4 +65,4 @@ p.write_text(t)
 print("[patch-zeromq-ios-host] updated", p)
 PY
 
-echo "[patch-zeromq-ios-host] ${DEPENDS_ZMQ}"
+echo "[patch-zeromq-ios-host] ${DEPENDS_ZMQ}/patch-zeromq-configure-ios.sh"

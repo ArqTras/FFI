@@ -3,7 +3,7 @@
 set -eu
 CFG="${1:-configure}"
 [[ -f "${CFG}" ]] || { echo "missing ${CFG}" >&2; exit 1; }
-if grep -q '*ios*)' "${CFG}"; then
+if grep -qF '*ios*)' "${CFG}"; then
   exit 0
 fi
 perl -i -pe '

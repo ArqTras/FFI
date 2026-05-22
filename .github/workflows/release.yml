@@ -349,7 +349,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
-          key: ffi-ios-${{ needs.resolve-version.outputs.version }}-v4-${{ hashFiles('build/ci/patch-zeromq-ios-host.sh', 'build/ci/patch-zeromq-configure-ac-ios.sh', 'build/ci/patch-zeromq-configure-ios.sh') }}
+          key: ffi-ios-${{ needs.resolve-version.outputs.version }}-v5-${{ hashFiles('build/ci/patch-zeromq-ios-host.sh', 'build/ci/patch-zeromq-configure-ios.sh') }}
       - name: Homebrew deps (Brewfile, same as mobile branch)
         run: bash build/ci/brew-install-macos.sh
       - uses: actions/setup-node@v4
