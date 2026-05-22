@@ -112,7 +112,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
-          key: ffi-macos-${{ needs.resolve-version.outputs.version }}
+          key: ffi-macos-${{ needs.resolve-version.outputs.version }}-depends-hybrid
       - name: Homebrew deps (Brewfile, same as mobile branch)
         run: bash build/ci/brew-install-macos.sh
       - uses: actions/setup-node@v4
@@ -132,8 +132,8 @@ jobs:
       - name: cargo build FFI
         working-directory: rust
         env:
-          # contrib/depends has no static boost_container; hybrid falls back to -lboost_container (link fails).
-          ARQMA_WALLET_FFI_STATIC_HYBRID: "0"
+          # Match mobile + desktop-release: vendored static deps from contrib/depends (not Homebrew dylibs).
+          ARQMA_WALLET_FFI_STATIC_HYBRID: "1"
         run: cargo build -p arqma-wallet-flutter-ffi --release
       - run: bash build/ci/package-ffi-artifact.sh macos-arm64 "${{ needs.resolve-version.outputs.version }}"
       - uses: actions/upload-artifact@v4

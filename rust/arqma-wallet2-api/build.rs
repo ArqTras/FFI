@@ -175,8 +175,29 @@ fn wallet_ffi_static_hybrid() -> bool {
         .unwrap_or(false)
 }
 
+fn wallet_ffi_use_depends() -> bool {
+    std::env::var("ARQMA_WALLET_FFI_USE_DEPENDS")
+        .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn macos_depends_lib_dir(upstream_path: &Path) -> Option<PathBuf> {
+    let host = match std::env::var("CARGO_CFG_TARGET_ARCH").ok().as_deref() {
+        Some("aarch64") => "aarch64-apple-darwin",
+        Some("x86_64") => "x86_64-apple-darwin",
+        _ => return None,
+    };
+    let lib = upstream_path.join("contrib/depends").join(host).join("lib");
+    if lib.is_dir() && (lib.join("libssl.a").is_file() || lib.join("libzmq.a").is_file()) {
+        Some(lib)
+    } else {
+        None
+    }
+}
+
 fn find_wallet_merged_dir(upstream: &Path) -> Option<PathBuf> {
     for root in [
+        upstream.join("build/ci-depends-release"),
         upstream.join("build-ios-device"),
         upstream.join("build-ios-sim"),
         upstream.join("build-android-depends-aarch64-linux-android"),
@@ -270,13 +291,9 @@ fn brew_prefix() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/opt/homebrew"))
 }
 
-/// Linux/macOS: `contrib/depends` + static-hybrid — do not add distro/Homebrew `-L` paths that shadow
-/// the vendored static archives (e.g. Ubuntu `libboost_*.a` in `/usr` breaks PIC when linking `.so`).
+/// Linux/macOS: `contrib/depends` build — do not add distro/Homebrew `-L` paths that shadow vendored `.a`.
 fn wallet_ffi_depends_vendor_paths_suppressed() -> bool {
-    wallet_ffi_static_hybrid()
-        && std::env::var("ARQMA_WALLET_FFI_USE_DEPENDS")
-            .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
-            .unwrap_or(false)
+    wallet_ffi_use_depends()
 }
 
 fn configure_wallet2_linking_macos(upstream_path: &Path) {
@@ -305,6 +322,10 @@ fn configure_wallet2_linking_macos(upstream_path: &Path) {
                 println!("cargo:rustc-link-search=native={}", p.display());
             }
         }
+    }
+
+    if let Some(depends_lib) = macos_depends_lib_dir(upstream_path) {
+        println!("cargo:rustc-link-search=native={}", depends_lib.display());
     }
 
     let bp = brew_prefix();
