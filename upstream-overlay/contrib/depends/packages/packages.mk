@@ -27,3 +27,6 @@ darwin_packages := ncurses readline
 
 android_native_packages := android_ndk
 android_packages := ncurses readline
+
+# iOS: build b2 with the native (macOS) toolchain; cross-build Boost libs with user-config.jam.
+ios_native_packages := native_b2

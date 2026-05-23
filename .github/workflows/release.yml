@@ -349,7 +349,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
-          key: ffi-ios-${{ needs.resolve-version.outputs.version }}-v11-${{ hashFiles('rust/.cargo/config.toml', 'rust/arqma-wallet-flutter-ffi/build.rs', 'upstream-overlay/contrib/depends/**') }}
+          key: ffi-ios-${{ needs.resolve-version.outputs.version }}-v12-${{ hashFiles('upstream-overlay/contrib/depends/packages/boost.mk', 'upstream-overlay/contrib/depends/packages/native_b2.mk', 'upstream-overlay/contrib/depends/packages/packages.mk') }}
       - name: Homebrew deps (Brewfile, same as mobile branch)
         run: bash build/ci/brew-install-macos.sh
       - uses: actions/setup-node@v4
