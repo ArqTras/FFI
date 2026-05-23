@@ -9,8 +9,8 @@ if [ "$host_os" = ios ]; then
   chmod +x ./b2
   # bootstrap.sh normally writes project-config.jam with --with-libraries; without it b2 builds everything.
   libs=$(printf '%s' "$libraries" | tr -d '"' | tr ',' ' ')
+  # Toolset lives only in user-config.jam (preprocess); do not duplicate "using clang" here.
   {
-    printf '%s\n' 'using clang ;'
     printf '%s\n' 'project : default-build <variant>release ;'
     for lib in $libs; do
       printf 'option.set with-%s : true ;\n' "$lib"
