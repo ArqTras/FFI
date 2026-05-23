@@ -6,6 +6,9 @@ $(package)_sha256_hash=af57be25cb4c4f4b413ed692fe378affb4352ea50fbe294a11ef548f4
 
 ifeq ($(host_os),ios)
 $(package)_dependencies=native_b2
+# Cross-build libs with iPhoneOS SDK (b2 engine is macOS-native via native_b2).
+$(package)_build_env_ios=SDKROOT=$(IOS_SDK) IPHONEOS_DEPLOYMENT_TARGET=$(IOS_MIN_VERSION)
+$(package)_stage_env_ios=SDKROOT=$(IOS_SDK) IPHONEOS_DEPLOYMENT_TARGET=$(IOS_MIN_VERSION)
 endif
 
 define $(package)_set_vars
@@ -42,17 +45,16 @@ define $(package)_preprocess_cmds
 endef
 
 define $(package)_config_cmds
-  if test "$(host_os)" = ios; then \
-    cp "$(build_prefix)/bin/b2" ./b2 && chmod +x ./b2; \
-  else \
-    ./bootstrap.sh --without-icu --with-libraries=$(boost_config_libraries_$(host_os)); \
-  fi
+  sh $(BASEDIR)/scripts/boost-config-depends.sh "$(host_os)" "$(build_prefix)" $(boost_config_libraries_$(host_os))
 endef
 
+boost_build_jobs=$(if $(filter ios,$(host_os)),1,2)
+boost_stage_jobs=$(if $(filter ios,$(host_os)),1,4)
+
 define $(package)_build_cmds
-  ./b2 -d1 -j$$( if test "$(host_os)" = ios; then echo 1; else echo 2; fi) --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) stage
+  ./b2 -d1 -j$(boost_build_jobs) --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) stage
 endef
 
 define $(package)_stage_cmds
-  ./b2 -d0 -j$$( if test "$(host_os)" = ios; then echo 1; else echo 4; fi) --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) install
+  ./b2 -d0 -j$(boost_stage_jobs) --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) install
 endef

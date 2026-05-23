@@ -4,8 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 UPSTREAM="${ARQMA_WALLET2_UPSTREAM_DIR:-${ROOT}/rust/arqma-rpc-upstream}"
 DEPENDS_HOST="${ARQMA_IOS_DEPENDS_HOST:-aarch64-apple-ios}"
-export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}"
-export PATH="/usr/bin:/bin:${HOME}/.cargo/bin:/opt/homebrew/bin:${PATH}"
+IOS_DEPLOY_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}"
 J="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
 bash "${ROOT}/build/ci/patch-arqma-epee-floor.sh" "${UPSTREAM}" 2>/dev/null || true
@@ -15,9 +14,15 @@ bash "${ROOT}/build/ci/patch-zeromq-ios-host.sh" "${UPSTREAM}"
 if [[ "${ARQMA_SKIP_IOS_DEPENDS:-0}" != "1" ]]; then
   echo "==> contrib/depends (HOST=${DEPENDS_HOST}) — cold build can take 30–90+ minutes"
   mkdir -p "${UPSTREAM}/contrib/depends/built" "${UPSTREAM}/contrib/depends/sources"
+  # Do not leak IPHONEOS_DEPLOYMENT_TARGET / SDKROOT into native_b2 (macOS b2 engine).
+  # shellcheck source=/dev/null
+  source "${ROOT}/build/ci/ios-depends-env.sh"
   make -C "${UPSTREAM}/contrib/depends" "HOST=${DEPENDS_HOST}" -j"${J}"
   bash "${ROOT}/build/ci/build-icu-static-into-depends.sh" "${UPSTREAM}" "${DEPENDS_HOST}"
 fi
+
+export IPHONEOS_DEPLOYMENT_TARGET="${IOS_DEPLOY_TARGET}"
+export PATH="/usr/bin:/bin:${HOME}/.cargo/bin:/opt/homebrew/bin:${PATH}"
 
 TOOLCHAIN="${UPSTREAM}/contrib/depends/${DEPENDS_HOST}/share/toolchain.cmake"
 if [[ ! -f "${TOOLCHAIN}" ]]; then

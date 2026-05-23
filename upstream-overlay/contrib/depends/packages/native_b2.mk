@@ -10,14 +10,9 @@ $(package)_download_path=$(boost_download_path)
 $(package)_file_name=$(boost_file_name)
 $(package)_sha256_hash=$(boost_sha256_hash)
 $(package)_build_subdir=tools/build/src/engine
-ifneq (,$(findstring clang,$($(package)_cxx)))
-$(package)_toolset_$(host_os)=clang
-else
-$(package)_toolset_$(host_os)=gcc
-endif
-
+# Build b2 with macOS SDK only (see scripts/native-b2-build.sh).
 define $(package)_build_cmds
-  CXX="$($(package)_cxx)" CXXFLAGS="$($(package)_cxxflags)" ./build.sh "$($(package)_toolset_$(host_os))"
+  sh $(BASEDIR)/scripts/native-b2-build.sh "$(build_CC)" "$(build_CXX)" "$(build_prefix)/bin"
 endef
 
 define $(package)_stage_cmds
