@@ -96,8 +96,12 @@ case "${HOST}" in
     (
       cd "${IOS_BUILD}"
       # ICU cross-build: --with-cross-build must be the native *build* tree (icucross.mk), not install prefix.
+      # aarch64-apple-ios is not in ICU_CHECK_MH_FRAG (defaults to mh-unknown); mh-darwin + iOS SDK flags is correct.
       "${ICU_SRC_ROOT}/source/configure" --host=aarch64-apple-ios --disable-dyload --disable-tools \
-        --with-cross-build="${NATIVE_BUILD}" "${COMMON_OPTS[@]}"
+        --disable-maintainer-mode \
+        --with-cross-build="${NATIVE_BUILD}" \
+        icu_cv_host_frag=mh-darwin \
+        "${COMMON_OPTS[@]}"
       make -j"$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
       make install
     )
