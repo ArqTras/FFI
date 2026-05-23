@@ -9,6 +9,9 @@ $(package)_dependencies=native_b2
 # Cross-build libs with iPhoneOS SDK (b2 engine is macOS-native via native_b2).
 $(package)_build_env_ios=SDKROOT=$(IOS_SDK) IPHONEOS_DEPLOYMENT_TARGET=$(IOS_MIN_VERSION)
 $(package)_stage_env_ios=SDKROOT=$(IOS_SDK) IPHONEOS_DEPLOYMENT_TARGET=$(IOS_MIN_VERSION)
+# bootstrap.sh (--with-libraries) is skipped on iOS; b2 must get an explicit --with-* list.
+boost_ios_lib_list := chrono filesystem program_options system thread date_time regex serialization atomic
+boost_b2_with_flags := $(foreach lib,$(boost_ios_lib_list),--with-$(lib) )
 endif
 
 define $(package)_set_vars
@@ -20,7 +23,7 @@ $(package)_config_opts+=threading=multi link=static -sNO_BZIP2=1 -sNO_ZLIB=1
 $(package)_config_opts_linux=target-os=linux threadapi=pthread runtime-link=static
 $(package)_config_opts_android=threadapi=pthread runtime-link=static target-os=android
 $(package)_config_opts_darwin=--toolset=darwin runtime-link=static target-os=darwin
-$(package)_config_opts_ios=target-os=iphone runtime-link=static threading=multi architecture=arm address-model=64
+$(package)_config_opts_ios=target-os=iphone runtime-link=static threading=multi architecture=arm address-model=64 $(boost_b2_with_flags)
 $(package)_config_opts_mingw32=binary-format=pe target-os=windows threadapi=win32 runtime-link=static
 $(package)_config_opts_x86_64=architecture=x86 address-model=64
 $(package)_config_opts_aarch64=address-model=64
