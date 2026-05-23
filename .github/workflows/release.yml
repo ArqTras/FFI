@@ -349,7 +349,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
-          key: ffi-ios-${{ needs.resolve-version.outputs.version }}-v10-${{ hashFiles('build/ci/build-icu-static-into-depends.sh', 'build/ci/patch-zeromq-ios-host.sh', 'upstream-overlay/contrib/depends/packages/**') }}
+          key: ffi-ios-${{ needs.resolve-version.outputs.version }}-v11-${{ hashFiles('rust/.cargo/config.toml', 'rust/arqma-wallet-flutter-ffi/build.rs', 'upstream-overlay/contrib/depends/**') }}
       - name: Homebrew deps (Brewfile, same as mobile branch)
         run: bash build/ci/brew-install-macos.sh
       - uses: actions/setup-node@v4
@@ -362,6 +362,7 @@ jobs:
       - run: bash build/ci/clone-arqma.sh
       - name: Build iOS FFI
         env:
+          IPHONEOS_DEPLOYMENT_TARGET: "13.0"
           # Device first; simulator needs iphonesimulator SDK host (future).
           BUILD_IOS_SIM: "0"
         run: bash rust/tool/build_mobile_wallet_ffi_ios.sh

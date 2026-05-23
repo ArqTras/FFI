@@ -17,6 +17,8 @@ define $(package)_set_vars
   $(package)_config_env_android=PKG_CONFIG_LIBDIR="$(host_prefix)/lib/pkgconfig" PKG_CONFIG_PATH="$(host_prefix)/lib/pkgconfig"
   $(package)_build_opts_mingw32=LDFLAGS="$($(package)_ldflags) -lpthread -lws2_32 -lcrypt32 -liphlpapi"
   $(package)_cflags_mingw32+="-D_WIN32_WINNT=0x600"
+  # Avoid ___chkstk_darwin references when folding libunbound.a into the iOS cdylib.
+  $(package)_cflags_ios=-fno-stack-check
 endef
 
 # Remove blobs

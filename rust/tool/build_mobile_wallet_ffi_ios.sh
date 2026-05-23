@@ -16,6 +16,7 @@ done
 
 # Upstream wallet_merged must exist for the iOS triple (see rust/docs/NATIVE_WALLET2.md).
 export ARQMA_WALLET2_UPSTREAM_DIR="${ARQMA_WALLET2_UPSTREAM_DIR:-${ROOT}/rust/arqma-rpc-upstream}"
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}"
 
 if [[ "${ARQMA_SKIP_IOS_WALLET_MERGED:-0}" != "1" ]]; then
   bash "${ROOT}/rust/tool/build_ios_wallet_merged.sh"

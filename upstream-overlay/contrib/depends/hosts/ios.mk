@@ -12,7 +12,7 @@ ios_LIBTOOL=$(shell xcrun --sdk iphoneos --find libtool)
 ios_INSTALL_NAME_TOOL=$(shell xcrun --sdk iphoneos --find install_name_tool)
 ios_OTOOL=$(shell xcrun --sdk iphoneos --find otool)
 
-ios_CFLAGS=-pipe
+ios_CFLAGS=-pipe -fno-stack-check
 ios_CXXFLAGS=$(ios_CFLAGS)
 ios_CPPFLAGS=
 ios_LDFLAGS=-arch arm64 -isysroot$(IOS_SDK) -miphoneos-version-min=$(IOS_MIN_VERSION)

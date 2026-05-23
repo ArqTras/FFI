@@ -361,6 +361,7 @@ fn ios_wallet_ffi_static_hybrid_cdylib_args() {
     }
 
     emit("-miphoneos-version-min=13.0");
+    emit("-Wl,-platform_version,ios,13.0,13.0");
     emit_upstream_aux_archives(&emit);
     emit_ios_wallet_aux_archives(&emit);
 
