@@ -20,6 +20,7 @@ if [[ "${ARQMA_SKIP_IOS_DEPENDS:-0}" != "1" ]]; then
   source "${ROOT}/build/ci/ios-depends-env.sh"
   make -C "${UPSTREAM}/contrib/depends" "HOST=${DEPENDS_HOST}" -j"${J}"
   bash "${ROOT}/build/ci/build-icu-static-into-depends.sh" "${UPSTREAM}" "${DEPENDS_HOST}"
+  bash "${ROOT}/build/ci/patch-depends-boost-cmake-ios.sh" "${UPSTREAM}" "${DEPENDS_HOST}"
 fi
 
 export IPHONEOS_DEPLOYMENT_TARGET="${IOS_DEPLOY_TARGET}"
@@ -40,6 +41,7 @@ echo "==> CMake iOS (depends toolchain, SDKROOT=${SDKROOT})"
 cmake -S "${UPSTREAM}" -B "${BUILD_DIR}" \
   -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN}" \
   -DIOS=ON \
+  -DARCH=arm64 \
   -DARQMA_SKIP_EMBEDDED_TRANSLATIONS=ON \
   -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
   -DBUILD_GUI_DEPS=ON \
