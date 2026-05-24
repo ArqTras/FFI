@@ -74,8 +74,14 @@ case "${HOST}" in
     NATIVE_BUILD="${WORKDIR}/icu-native-build"
     IOS_BUILD="${WORKDIR}/icu-ios-build"
     mkdir -p "${NATIVE_BUILD}" "${IOS_BUILD}"
+    
+    # Build native ICU for macOS host (must clear iOS-specific vars to avoid cross-contamination)
     (
       cd "${NATIVE_BUILD}"
+      # Clear iOS environment to prevent leaking into native build
+      unset CC CXX CFLAGS CXXFLAGS LDFLAGS 2>/dev/null || true
+      unset IPHONEOS_DEPLOYMENT_TARGET SDKROOT 2>/dev/null || true
+      
       "${ICU_SRC_ROOT}/source/configure" \
         --prefix="${NATIVE_PREFIX}" \
         --disable-shared --enable-static \
@@ -88,6 +94,8 @@ case "${HOST}" in
       echo "error: native ICU build did not produce ${NATIVE_BUILD}/config/icucross.mk" >&2
       exit 1
     fi
+    
+    # Build iOS cross-compiled version with proper iOS SDK flags
     export CC="$(xcrun --sdk iphoneos --find clang)"
     export CXX="$(xcrun --sdk iphoneos --find clang++)"
     export CFLAGS="-fPIC -arch arm64 -isysroot${IOS_SDK} -miphoneos-version-min=13.0"
