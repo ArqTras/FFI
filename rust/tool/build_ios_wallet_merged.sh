@@ -10,6 +10,7 @@ J="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 bash "${ROOT}/build/ci/patch-arqma-epee-floor.sh" "${UPSTREAM}" 2>/dev/null || true
 export ARQMA_IOS_DEPENDS_HOST="${DEPENDS_HOST}"
 bash "${ROOT}/build/ci/patch-zeromq-ios-host.sh" "${UPSTREAM}"
+bash "${ROOT}/build/ci/patch-arqma-ios-translations.sh" "${UPSTREAM}"
 
 if [[ "${ARQMA_SKIP_IOS_DEPENDS:-0}" != "1" ]]; then
   echo "==> contrib/depends (HOST=${DEPENDS_HOST}) — cold build can take 30–90+ minutes"
@@ -22,6 +23,7 @@ if [[ "${ARQMA_SKIP_IOS_DEPENDS:-0}" != "1" ]]; then
 fi
 
 export IPHONEOS_DEPLOYMENT_TARGET="${IOS_DEPLOY_TARGET}"
+export SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
 export PATH="/usr/bin:/bin:${HOME}/.cargo/bin:/opt/homebrew/bin:${PATH}"
 
 TOOLCHAIN="${UPSTREAM}/contrib/depends/${DEPENDS_HOST}/share/toolchain.cmake"
@@ -34,9 +36,12 @@ BUILD_DIR="${UPSTREAM}/build-ios-depends-device"
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
 
-echo "==> CMake iOS (depends toolchain)"
+echo "==> CMake iOS (depends toolchain, SDKROOT=${SDKROOT})"
 cmake -S "${UPSTREAM}" -B "${BUILD_DIR}" \
   -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN}" \
+  -DIOS=ON \
+  -DARQMA_SKIP_EMBEDDED_TRANSLATIONS=ON \
+  -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
   -DBUILD_GUI_DEPS=ON \
   -DSTATIC=ON \
   -DCMAKE_BUILD_TYPE=Release \
