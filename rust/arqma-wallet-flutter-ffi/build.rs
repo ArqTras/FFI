@@ -363,7 +363,7 @@ fn ios_wallet_ffi_static_hybrid_cdylib_args() {
     emit("-miphoneos-version-min=13.0");
     emit("-Wl,-platform_version,ios,13.0,13.0");
     emit_upstream_aux_archives(&emit);
-    emit_ios_wallet_aux_archives(&emit);
+    // iOS `wallet_merged` already includes `lmdb_lib` object members; do not force_load split `.a`.
 
     // OpenSSL: libssl depends on libcrypto — link crypto before ssl when force-loading.
     let ios_libs: &[&str] = &[
@@ -784,23 +784,7 @@ fn depends_vendor_lib_dir(upstream: &Path) -> Option<PathBuf> {
     None
 }
 
-fn emit_ios_wallet_aux_archives(emit: &dyn Fn(&str)) {
-    let upstream = arqma_upstream_root();
-    for sub in ["build-ios-depends-device", "build-ios-device"] {
-        let root = upstream.join(sub);
-        // `fold-wallet-merged-archive.sh` folds epee / easylogging / randomx into `wallet_merged`.
-        // Force-loading the standalone `.a` files again causes hundreds of Apple ld duplicate symbols.
-        let lmdb = root.join("src/lmdb/liblmdb/liblmdb.a");
-        if lmdb.is_file() {
-            emit("-Wl,-force_load");
-            emit(&path_for_ld(&lmdb));
-            return;
-        }
-    }
-    println!(
-        "cargo:warning=arqma-wallet-flutter-ffi: iOS wallet aux archives not found under build-ios-depends-device"
-    );
-}
+// iOS: `wallet_merged` + fold-wallet-merged-archive.sh; no standalone epee/randomx/lmdb force_load.
 
 fn emit_upstream_aux_archives(emit: &dyn Fn(&str)) {
     let upstream = arqma_upstream_root();
