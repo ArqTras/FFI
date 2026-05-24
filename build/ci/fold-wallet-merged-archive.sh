@@ -29,8 +29,26 @@ if [[ -z "${EPEE}" || -z "${EASY}" || -z "${RX}" ]]; then
   exit 0
 fi
 
-# Do not skip fold based on file size alone — `wallet_merged` can be >1MB but still miss epee
-# (breaks Android dlopen: undefined `epee::to_hex`). Fold whenever aux `.a` files exist.
+# Skip when epee is already in the archive (CMake/libtool fat merge on macOS/iOS).
+# Do not skip based on file size alone — Android 1.0.0 had >1MB archives still missing epee.
+wallet_merged_contains_epee() {
+  local ar="$1"
+  local out=""
+  for cmd in "llvm-nm -g" "nm -g"; do
+    set +e
+    out="$(${cmd} "${ar}" 2>/dev/null)"
+    set -e
+    if [[ -n "${out}" ]] && echo "${out}" | grep -qE 'epee.*to_hex|_ZN4epee6to_hex'; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+if wallet_merged_contains_epee "${WALLET_A}"; then
+  echo "[fold-wallet-merged] OK (epee already in archive): ${WALLET_A}"
+  exit 0
+fi
 
 if command -v libtool >/dev/null 2>&1; then
   echo "[fold-wallet-merged] libtool -static -> ${WALLET_A}"

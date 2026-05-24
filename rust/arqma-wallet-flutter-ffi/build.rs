@@ -76,7 +76,6 @@ fn android_wallet_ffi_static_hybrid_cdylib_args() {
     }
 
     emit("-Wl,--no-as-needed");
-    emit_upstream_aux_archives(&emit);
     emit("-Wl,-Bdynamic");
     emit("-lc++_shared");
 
@@ -818,24 +817,17 @@ fn emit_upstream_aux_archives(emit: &dyn Fn(&str)) {
     let upstream = arqma_upstream_root();
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let macos = target_os == "macos";
-    if target_os == "ios" {
+    // iOS / Android: epee is folded into `wallet_merged` by fold-wallet-merged-archive.sh.
+    if target_os == "ios" || target_os == "android" {
         return;
     }
-    // CI macOS/Linux use `build/ci-native-release`; Android uses build-android-depends-*; MinGW uses build-mingw.
-    let mut subs = vec![
+    // CI macOS/Linux use `build/ci-native-release` (see build/ci/build-arqma-*.sh); MinGW uses `build-mingw`.
+    for sub in [
         "build/ci-depends-release",
         "build-mingw",
         "build/ci-native-release",
         "build",
-    ];
-    if target_os == "android" {
-        subs = vec![
-            "build-android-depends-aarch64-linux-android",
-            "build-android-depends-x86_64-linux-android",
-            "build-android-depends-armv7-linux-androideabi",
-        ];
-    }
-    for sub in subs {
+    ] {
         let root = upstream.join(sub);
         let epee = root.join("contrib/epee/src/libepee.a");
         let elog = root.join("external/easylogging++/libeasylogging.a");
