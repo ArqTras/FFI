@@ -76,7 +76,19 @@ if wallet_merged_already_folded "${WALLET_A}"; then
   exit 0
 fi
 
-if command -v libtool >/dev/null 2>&1; then
+# GNU libtool (macOS) supports `libtool -static` to merge `.a` files. MSYS2's `libtool` is a different
+# program and rejects `-static`; use python extract/repack on MinGW instead.
+libtool_supports_static_fat_archive() {
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*) return 1 ;;
+  esac
+  if ! command -v libtool >/dev/null 2>&1; then
+    return 1
+  fi
+  libtool --help 2>/dev/null | grep -qE '[[:space:]]-static[[:space:]]'
+}
+
+if libtool_supports_static_fat_archive; then
   echo "[fold-wallet-merged] libtool -static -> ${WALLET_A}"
   libtool -static -o "${WALLET_A}.fat" "${WALLET_A}" "${EPEE}" "${EASY}" "${RX}"
   mv -f "${WALLET_A}.fat" "${WALLET_A}"
