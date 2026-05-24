@@ -181,8 +181,20 @@ if(BUILD_GUI_DEPS)
           COMMAND ${CMAKE_COMMAND} -E rename $<TARGET_FILE:wallet_merged>.fat $<TARGET_FILE:wallet_merged>
           COMMENT "Fold epee/easylogging/randomx into wallet_merged.lib (Windows COFF)"
           VERBATIM)
-      elseif(ANDROID OR (UNIX AND NOT APPLE))
-        # Fold at build time via build/ci/fold-wallet-merged-archive.sh (GNU ar MRI fails on thin LLVM .a).
+      elseif(MINGW)
+        # MinGW: GNU `ar -M` MRI merges COFF `.a` archives (python extract misses `.obj` members).
+        add_custom_command(TARGET wallet_merged POST_BUILD
+          COMMAND ${CMAKE_COMMAND}
+            -DCMAKE_AR=${CMAKE_AR}
+            -DWALLET_MERGED=$<TARGET_FILE:wallet_merged>
+            -DLIBEPEE=$<TARGET_FILE:epee>
+            -DLIBEASYLOGGING=$<TARGET_FILE:easylogging>
+            -DLIBRANDOMX=$<TARGET_FILE:randomx>
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/wallet_merge_gnu_ar.cmake"
+          COMMENT "Fold epee/easylogging/randomx into libwallet_merged.a (MinGW GNU ar MRI)"
+          VERBATIM)
+      elseif(UNIX AND NOT APPLE)
+        # Linux: fold at build time via build/ci/fold-wallet-merged-archive.sh (thin LLVM .a).
       endif()
     endif()
     if(IOS)

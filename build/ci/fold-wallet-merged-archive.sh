@@ -51,7 +51,7 @@ wallet_merged_already_folded() {
     return $?
   fi
   # Any epee object member ⇒ aux libs were folded (CMake libtool or a prior run of this script).
-  if echo "${listing}" | grep -qE '(^|/)hex\.cpp\.o$|(^|/)wipeable_string\.cpp\.o$|(^|/)easylogging\+\+\\.cc\\.o$'; then
+  if echo "${listing}" | grep -qE '(^|/)hex\.cpp\.(o|obj)$|(^|/)wipeable_string\.cpp\.(o|obj)$|(^|/)easylogging\+\+\\.(cc\\.o|cc\\.obj)$'; then
     return 0
   fi
   return 1
@@ -139,8 +139,24 @@ try:
         os.makedirs(sub, exist_ok=True)
         extract(ar, sub)
         objs.extend(glob.glob(os.path.join(sub, "*.o")))
+        objs.extend(glob.glob(os.path.join(sub, "*.obj")))
     if not objs:
-        raise RuntimeError("no object files extracted")
+        listing = []
+        for ar_cmd in (["llvm-ar", "ar"]):
+            try:
+                r = subprocess.run(
+                    [ar_cmd, "t", ar],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                listing = (r.stdout or "").strip().splitlines()
+                break
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                continue
+        raise RuntimeError(
+            f"no object files extracted from {ar} (members: {listing[:8]}{'...' if len(listing) > 8 else ''})"
+        )
     out = archives[0]
     subprocess.run(["ar", "qc", out, *objs], check=True)
     subprocess.run(["ranlib", out], check=True)
