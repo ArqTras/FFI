@@ -363,7 +363,7 @@ fn ios_wallet_ffi_static_hybrid_cdylib_args() {
     emit("-miphoneos-version-min=13.0");
     emit("-Wl,-platform_version,ios,13.0,13.0");
     emit_upstream_aux_archives(&emit);
-    // iOS `wallet_merged` already includes `lmdb_lib` object members; do not force_load split `.a`.
+    // iOS: `arqma-wallet2-api` links `wallet_merged` + `lmdb` via `#[link]` (not standalone epee/randomx).
 
     // OpenSSL: libssl depends on libcrypto — link crypto before ssl when force-loading.
     let ios_libs: &[&str] = &[
