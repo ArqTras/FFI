@@ -45,7 +45,7 @@ mod force_wallet_static {
     extern "C" {}
 }
 
-#[cfg(any(target_os = "macos", target_os = "android"))]
+#[cfg(target_os = "macos")]
 mod force_wallet_static {
     #![allow(dead_code)]
     #[link(
@@ -55,6 +55,40 @@ mod force_wallet_static {
     )]
     extern "C" {}
     #[link(name = "lmdb", kind = "static", modifiers = "+bundle,+whole-archive")]
+    extern "C" {}
+}
+
+// Android NDK ld supports `muldefs` + `--whole-archive` like Linux; do not assume a fat `wallet_merged`.
+#[cfg(target_os = "android")]
+mod force_wallet_static {
+    #![allow(dead_code)]
+    #[link(
+        name = "wallet_merged",
+        kind = "static",
+        modifiers = "+bundle,+whole-archive"
+    )]
+    extern "C" {}
+    #[link(name = "epee", kind = "static", modifiers = "+bundle,+whole-archive")]
+    extern "C" {}
+    #[link(
+        name = "easylogging",
+        kind = "static",
+        modifiers = "+bundle,+whole-archive"
+    )]
+    extern "C" {}
+    #[link(
+        name = "randomx",
+        kind = "static",
+        modifiers = "+bundle,+whole-archive"
+    )]
+    extern "C" {}
+    #[link(name = "lmdb", kind = "static", modifiers = "+bundle,+whole-archive")]
+    extern "C" {}
+    #[link(
+        name = "cryptonote_format_utils_basic",
+        kind = "static",
+        modifiers = "+bundle,+whole-archive"
+    )]
     extern "C" {}
 }
 

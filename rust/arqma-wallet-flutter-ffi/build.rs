@@ -26,7 +26,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=ARQMA_WALLET_FFI_STATIC_HYBRID");
     println!("cargo:rerun-if-env-changed=ARQMA_WALLET_FFI_DEPENDS_LIB_DIR");
 
-    if target_os == "linux" {
+    if target_os == "linux" || target_os == "android" {
         println!("cargo:rustc-link-arg=-Wl,-z,muldefs");
     }
 
@@ -76,6 +76,7 @@ fn android_wallet_ffi_static_hybrid_cdylib_args() {
     }
 
     emit("-Wl,--no-as-needed");
+    emit_upstream_aux_archives(&emit);
     emit("-Wl,-Bdynamic");
     emit("-lc++_shared");
 
@@ -758,6 +759,9 @@ fn depends_host_triple() -> Option<&'static str> {
         ("macos", "aarch64") => Some("aarch64-apple-darwin"),
         ("macos", "x86_64") => Some("x86_64-apple-darwin"),
         ("ios", "aarch64") => Some("aarch64-apple-ios"),
+        ("android", "aarch64") => Some("aarch64-linux-android"),
+        ("android", "x86_64") => Some("x86_64-linux-android"),
+        ("android", "arm") => Some("armv7-linux-androideabi"),
         _ => None,
     }
 }
@@ -814,17 +818,24 @@ fn emit_upstream_aux_archives(emit: &dyn Fn(&str)) {
     let upstream = arqma_upstream_root();
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let macos = target_os == "macos";
-    // iOS / Android `wallet_merged` already folds epee / easylogging / randomx.
-    if target_os == "ios" || target_os == "android" {
+    if target_os == "ios" {
         return;
     }
-    // CI macOS/Linux use `build/ci-native-release` (see build/ci/build-arqma-*.sh); MinGW uses `build-mingw`.
-    for sub in [
+    // CI macOS/Linux use `build/ci-native-release`; Android uses build-android-depends-*; MinGW uses build-mingw.
+    let mut subs = vec![
         "build/ci-depends-release",
         "build-mingw",
         "build/ci-native-release",
         "build",
-    ] {
+    ];
+    if target_os == "android" {
+        subs = vec![
+            "build-android-depends-aarch64-linux-android",
+            "build-android-depends-x86_64-linux-android",
+            "build-android-depends-armv7-linux-androideabi",
+        ];
+    }
+    for sub in subs {
         let root = upstream.join(sub);
         let epee = root.join("contrib/epee/src/libepee.a");
         let elog = root.join("external/easylogging++/libeasylogging.a");

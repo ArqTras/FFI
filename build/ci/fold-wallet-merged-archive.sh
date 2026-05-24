@@ -29,11 +29,8 @@ if [[ -z "${EPEE}" || -z "${EASY}" || -z "${RX}" ]]; then
   exit 0
 fi
 
-# Already fat enough (folded upstream libtool or prior run).
-if [[ "$(wc -c < "${WALLET_A}" | tr -d ' ')" -ge 1048576 ]]; then
-  echo "[fold-wallet-merged] OK (already fat): ${WALLET_A}"
-  exit 0
-fi
+# Do not skip fold based on file size alone — `wallet_merged` can be >1MB but still miss epee
+# (breaks Android dlopen: undefined `epee::to_hex`). Fold whenever aux `.a` files exist.
 
 if command -v libtool >/dev/null 2>&1; then
   echo "[fold-wallet-merged] libtool -static -> ${WALLET_A}"
