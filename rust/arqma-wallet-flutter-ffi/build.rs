@@ -788,23 +788,12 @@ fn emit_ios_wallet_aux_archives(emit: &dyn Fn(&str)) {
     let upstream = arqma_upstream_root();
     for sub in ["build-ios-depends-device", "build-ios-device"] {
         let root = upstream.join(sub);
-        // `wallet_merged` already contains cryptonote_format_utils_basic objects; force-loading
-        // the standalone `.a` causes Apple ld duplicate-symbol errors.
-        let archives = [
-            root.join("external/randomarq/librandomx.a"),
-            root.join("contrib/epee/src/libepee.a"),
-            root.join("external/easylogging++/libeasylogging.a"),
-            root.join("src/lmdb/liblmdb/liblmdb.a"),
-        ];
-        let mut any = false;
-        for path in archives {
-            if path.is_file() {
-                emit("-Wl,-force_load");
-                emit(&path_for_ld(&path));
-                any = true;
-            }
-        }
-        if any {
+        // `fold-wallet-merged-archive.sh` folds epee / easylogging / randomx into `wallet_merged`.
+        // Force-loading the standalone `.a` files again causes hundreds of Apple ld duplicate symbols.
+        let lmdb = root.join("src/lmdb/liblmdb/liblmdb.a");
+        if lmdb.is_file() {
+            emit("-Wl,-force_load");
+            emit(&path_for_ld(&lmdb));
             return;
         }
     }

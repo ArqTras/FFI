@@ -126,7 +126,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: rust/arqma-rpc-upstream/contrib/depends
-          key: ffi-macos-depends-v3-${{ hashFiles('build/ci/build-arqma-wallet-ffi-deps.sh', 'build/ci/patches/zeromq-ios-host-os.patch') }}
+          key: ffi-macos-depends-v4-${{ hashFiles('build/ci/fold-wallet-merged-archive.sh', 'build/ci/build-arqma-wallet-ffi-deps.sh', 'build/ci/patches/zeromq-ios-host-os.patch') }}
           restore-keys: ffi-macos-depends-
       - run: bash build/ci/build-arqma-macos.sh
       - name: cargo build FFI
@@ -169,7 +169,8 @@ jobs:
             mingw-w64-x86_64-boost mingw-w64-x86_64-openssl mingw-w64-x86_64-libsodium
             mingw-w64-x86_64-zeromq mingw-w64-x86_64-hidapi mingw-w64-x86_64-readline
             mingw-w64-x86_64-ncurses mingw-w64-x86_64-unbound mingw-w64-x86_64-lmdb
-            mingw-w64-x86_64-icu mingw-w64-x86_64-zlib mingw-w64-x86_64-libunwind git zip
+            mingw-w64-x86_64-icu mingw-w64-x86_64-zlib mingw-w64-x86_64-libunwind
+            mingw-w64-x86_64-libtool mingw-w64-x86_64-python git zip
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

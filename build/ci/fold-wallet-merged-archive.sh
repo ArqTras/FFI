@@ -29,9 +29,35 @@ if [[ -z "${EPEE}" || -z "${EASY}" || -z "${RX}" ]]; then
   exit 0
 fi
 
-# Skip when epee is already in the archive (CMake/libtool fat merge on macOS/iOS).
-# Do not skip based on file size alone — Android 1.0.0 had >1MB archives still missing epee.
-wallet_merged_contains_epee() {
+# macOS/iOS CMake may already fold epee/easylogging/randomx via libtool POST_BUILD on wallet_merged.
+# `nm` alone is unreliable (mangled names / thin archives). Member names from `ar t` are definitive.
+wallet_merged_archive_listing() {
+  local ar="$1"
+  local listing=""
+  for ar_cmd in llvm-ar ar; do
+    if command -v "${ar_cmd}" >/dev/null 2>&1; then
+      listing="$("${ar_cmd}" t "${ar}" 2>/dev/null)" && break
+    fi
+  done
+  printf '%s' "${listing}"
+}
+
+wallet_merged_already_folded() {
+  local ar="$1"
+  local listing
+  listing="$(wallet_merged_archive_listing "${ar}")"
+  if [[ -z "${listing}" ]]; then
+    wallet_merged_contains_epee_nm "${ar}"
+    return $?
+  fi
+  # Any epee object member ⇒ aux libs were folded (CMake libtool or a prior run of this script).
+  if echo "${listing}" | grep -qE '(^|/)hex\.cpp\.o$|(^|/)wipeable_string\.cpp\.o$|(^|/)easylogging\+\+\\.cc\\.o$'; then
+    return 0
+  fi
+  return 1
+}
+
+wallet_merged_contains_epee_nm() {
   local ar="$1"
   local out=""
   for cmd in "llvm-nm -g" "nm -g"; do
@@ -45,8 +71,8 @@ wallet_merged_contains_epee() {
   return 1
 }
 
-if wallet_merged_contains_epee "${WALLET_A}"; then
-  echo "[fold-wallet-merged] OK (epee already in archive): ${WALLET_A}"
+if wallet_merged_already_folded "${WALLET_A}"; then
+  echo "[fold-wallet-merged] OK (aux objects already in archive): ${WALLET_A}"
   exit 0
 fi
 
@@ -58,8 +84,23 @@ if command -v libtool >/dev/null 2>&1; then
   exit 0
 fi
 
-echo "[fold-wallet-merged] python extract/repack -> ${WALLET_A}"
-python3 - "${WALLET_A}" "${EPEE}" "${EASY}" "${RX}" <<'PY'
+resolve_python() {
+  for py in python3 python; do
+    if command -v "${py}" >/dev/null 2>&1; then
+      echo "${py}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+PY="$(resolve_python)" || {
+  echo "[fold-wallet-merged] need libtool or python for extract/repack (install mingw-w64-x86_64-libtool / python)" >&2
+  exit 127
+}
+
+echo "[fold-wallet-merged] ${PY} extract/repack -> ${WALLET_A}"
+"${PY}" - "${WALLET_A}" "${EPEE}" "${EASY}" "${RX}" <<'PY'
 import glob
 import os
 import shutil
