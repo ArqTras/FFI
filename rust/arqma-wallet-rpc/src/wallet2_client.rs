@@ -365,14 +365,30 @@ impl Wallet2ApiClient {
                 });
             }
             "refresh" => {
+                let start_height = _params
+                    .get("start_height")
+                    .or_else(|| _params.get("refresh_start_height"))
+                    .and_then(|v| v.as_u64());
+                if let Some(h) = start_height {
+                    return self.spawn_wallet_background_job("refresh_from_height", move |s| {
+                        let ok = s
+                            .refresh_from_height(h)
+                            .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
+                        if !ok {
+                            return Err(WalletRpcError::Transport(format!(
+                                "wallet2: refresh_from_height({h}) returned false"
+                            )));
+                        }
+                        Ok(())
+                    });
+                }
                 return self.spawn_wallet_background_job("refresh", |s| {
                     let ok = s
                         .refresh()
                         .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
                     if !ok {
-                        return Err(WalletRpcError::Transport(
-                            "wallet2: refresh returned false".to_string(),
-                        ));
+                        // Often means background startRefresh already holds the refresh mutex.
+                        return Ok(());
                     }
                     Ok(())
                 });

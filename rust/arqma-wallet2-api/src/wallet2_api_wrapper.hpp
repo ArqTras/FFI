@@ -82,6 +82,8 @@ bool wallet2_rescan_blockchain(Wallet2Bridge& bridge);
 bool wallet2_rescan_spent(Wallet2Bridge& bridge);
 /// Synchronous refresh (matches `arqma-wallet-rpc` `refresh`): pull new blocks / txs from the daemon.
 bool wallet2_refresh(Wallet2Bridge& bridge);
+/// Sync refresh from [start_height] (subprocess wallet-rpc `refresh` parity when scan stalls).
+bool wallet2_refresh_from_height(Wallet2Bridge& bridge, std::uint64_t start_height);
 bool wallet2_import_key_images(const Wallet2Bridge& bridge, const std::string& filename);
 rust::String wallet2_stake_prepare_json(
   Wallet2Bridge& bridge,

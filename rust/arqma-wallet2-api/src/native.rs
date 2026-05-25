@@ -79,6 +79,10 @@ mod ffi {
         fn wallet2_rescan_blockchain(bridge: Pin<&mut Wallet2Bridge>) -> Result<bool>;
         fn wallet2_rescan_spent(bridge: Pin<&mut Wallet2Bridge>) -> Result<bool>;
         fn wallet2_refresh(bridge: Pin<&mut Wallet2Bridge>) -> Result<bool>;
+        fn wallet2_refresh_from_height(
+            bridge: Pin<&mut Wallet2Bridge>,
+            start_height: u64,
+        ) -> Result<bool>;
         fn wallet2_import_key_images(bridge: &Wallet2Bridge, filename: &CxxString) -> Result<bool>;
         fn wallet2_stake_prepare_json(
             bridge: Pin<&mut Wallet2Bridge>,
@@ -350,6 +354,12 @@ impl NativeWallet2Session {
     pub fn refresh(&mut self) -> Wallet2Result<bool> {
         let mut b = self.bridge.pin_mut();
         ffi::wallet2_refresh(b.as_mut())
+            .map_err(|e| Wallet2Error::OperationFailed(e.to_string()))
+    }
+
+    pub fn refresh_from_height(&mut self, start_height: u64) -> Wallet2Result<bool> {
+        let mut b = self.bridge.pin_mut();
+        ffi::wallet2_refresh_from_height(b.as_mut(), start_height)
             .map_err(|e| Wallet2Error::OperationFailed(e.to_string()))
     }
 
