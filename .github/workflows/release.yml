@@ -97,6 +97,35 @@ jobs:
           name: ffi-linux-x86_64
           path: dist/arqma-wallet-ffi-linux-x86_64-*.zip
 
+  solo-pool-linux:
+    name: Solo pool Linux x86_64
+    needs: [resolve-version]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: solo-pool-linux-${{ needs.resolve-version.outputs.version }}
+      - name: Normalize shell scripts (LF)
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
+      - name: cargo build solo pool
+        working-directory: rust
+        run: cargo build -p arqma-flutter-solo-pool --release --bin arqma_flutter_solo_pool
+      - run: bash build/ci/package-solo-pool-artifact.sh linux-x86_64 "${{ needs.resolve-version.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solo-pool-linux-x86_64
+          path: dist/arqma-wallet-solo-pool-linux-x86_64-*.zip
+
   ffi-macos:
     name: macOS arm64
     needs: [resolve-version]
@@ -140,6 +169,35 @@ jobs:
         with:
           name: ffi-macos-arm64
           path: dist/arqma-wallet-ffi-macos-arm64-*.zip
+
+  solo-pool-macos:
+    name: Solo pool macOS arm64
+    needs: [resolve-version]
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: solo-pool-macos-${{ needs.resolve-version.outputs.version }}
+      - name: Normalize shell scripts (LF)
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i '' 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
+      - name: cargo build solo pool
+        working-directory: rust
+        run: cargo build -p arqma-flutter-solo-pool --release --bin arqma_flutter_solo_pool
+      - run: bash build/ci/package-solo-pool-artifact.sh macos-arm64 "${{ needs.resolve-version.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solo-pool-macos-arm64
+          path: dist/arqma-wallet-solo-pool-macos-arm64-*.zip
 
   ffi-windows:
     name: Windows x86_64 GNU
@@ -217,6 +275,55 @@ jobs:
         with:
           name: ffi-windows-x86_64-gnu
           path: dist/arqma-wallet-ffi-windows-x86_64-gnu-*.zip
+
+  solo-pool-windows:
+    name: Solo pool Windows x86_64 GNU
+    needs: [resolve-version]
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        shell: bash
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - run: rustup target add x86_64-pc-windows-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: solo-pool-windows-${{ needs.resolve-version.outputs.version }}
+      - id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc zip
+      - name: Normalize shell scripts (LF)
+        shell: bash
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
+      - name: cargo build solo pool
+        working-directory: rust
+        shell: pwsh
+        env:
+          CARGO_PROFILE_RELEASE_LTO: thin
+        run: |
+          $root = "${{ steps.msys2.outputs.msys2-location }}"
+          if ([string]::IsNullOrWhiteSpace($root)) { $root = "C:\msys64" }
+          $env:Path = "$root\mingw64\bin;$root\usr\bin;" + $env:Path
+          cargo build -p arqma-flutter-solo-pool --release --bin arqma_flutter_solo_pool --target x86_64-pc-windows-gnu
+      - name: Package solo pool artifact
+        shell: msys2 {0}
+        run: |
+          VER="${{ needs.resolve-version.outputs.version }}"
+          bash "$(cygpath -u "$GITHUB_WORKSPACE")/build/ci/package-solo-pool-artifact.sh" windows-x86_64-gnu "$VER"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solo-pool-windows-x86_64-gnu
+          path: dist/arqma-wallet-solo-pool-windows-x86_64-gnu-*.zip
 
   ffi-android-arm64:
     name: Android arm64
@@ -383,12 +490,14 @@ jobs:
       - ffi-android-arm64
       - ffi-android-x86_64
       - ffi-ios
+      - solo-pool-linux
+      - solo-pool-macos
+      - solo-pool-windows
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-          pattern: ffi-*
           merge-multiple: true
       - name: List release assets
         run: find artifacts -type f -name '*.zip' | sort

@@ -1,9 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
+  "arqma-wallet-core",
   "arqma-wallet-rpc",
   "arqma-wallet2-api",
   "arqma-wallet-flutter-ffi",
+  "arqma-flutter-solo-pool",
 ]
 
 [workspace.package]

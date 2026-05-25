@@ -1,0 +1,19 @@
+[package]
+name = "arqma-flutter-solo-pool"
+version.workspace = true
+edition.workspace = true
+description = "Flutter desktop sidecar: Stratum solo pool with JSON-line events on stdout (no Tauri / no wallet2 FFI)."
+license.workspace = true
+
+[[bin]]
+name = "arqma_flutter_solo_pool"
+path = "src/bin/arqma_flutter_solo_pool.rs"
+
+[dependencies]
+arqma-wallet-core = { path = "../arqma-wallet-core" }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+tokio = { version = "1.40.0", features = ["time", "rt", "rt-multi-thread", "macros", "signal", "net", "io-util", "sync"] }
+reqwest = { version = "0.12.12", default-features = false, features = ["json", "rustls-tls"] }
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+hex = "0.4.3"
