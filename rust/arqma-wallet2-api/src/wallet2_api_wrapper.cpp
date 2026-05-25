@@ -583,9 +583,13 @@ bool wallet2_refresh_from_height(Wallet2Bridge& bridge, std::uint64_t start_heig
   if (bridge.wallet == nullptr) {
     throw std::runtime_error("wallet is null");
   }
-  // Portable across upstream revisions: pospow may lack Wallet::refreshFromHeight().
+  // Stall recovery: background `startRefresh` can hold the refresh mutex while height stops
+  // advancing — `refresh()` then returns false. Pause the thread, sync from height, resume.
+  bridge.wallet->pauseRefresh();
   bridge.wallet->setRefreshFromBlockHeight(start_height);
-  return bridge.wallet->refresh();
+  const bool ok = bridge.wallet->refresh();
+  bridge.wallet->startRefresh();
+  return ok;
 }
 
 bool wallet2_import_key_images(const Wallet2Bridge& bridge, const std::string& filename) {

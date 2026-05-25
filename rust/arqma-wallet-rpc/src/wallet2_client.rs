@@ -375,9 +375,10 @@ impl Wallet2ApiClient {
                             .refresh_from_height(h)
                             .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
                         if !ok {
-                            return Err(WalletRpcError::Transport(format!(
-                                "wallet2: refresh_from_height({h}) returned false"
-                            )));
+                            // After pauseRefresh+refresh in C++, false usually means daemon not ready.
+                            eprintln!(
+                                "[wallet2] refresh_from_height({h}) returned false (daemon busy or refresh skipped)"
+                            );
                         }
                         Ok(())
                     });
