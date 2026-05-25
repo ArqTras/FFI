@@ -1,6 +1,8 @@
 #include "wallet2_api_wrapper.hpp"
 
 #include <cctype>
+#include <cinttypes>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -587,7 +589,22 @@ bool wallet2_refresh_from_height(Wallet2Bridge& bridge, std::uint64_t start_heig
   // advancing — `refresh()` then returns false. Pause the thread, sync from height, resume.
   bridge.wallet->pauseRefresh();
   bridge.wallet->setRefreshFromBlockHeight(start_height);
-  const bool ok = bridge.wallet->refresh();
+  bool ok = bridge.wallet->refresh();
+  if (!ok) {
+    const int conn = static_cast<int>(bridge.wallet->connected());
+    const std::uint64_t dh = bridge.wallet->daemonBlockChainHeight();
+    const std::uint64_t wh = bridge.wallet->blockChainHeight();
+    std::fprintf(
+        stderr,
+        "[wallet2] refresh_from_height(%" PRIu64 "): sync refresh false connected=%d "
+        "daemon_h=%" PRIu64 " wallet_h=%" PRIu64 "\n",
+        start_height,
+        conn,
+        dh,
+        wh);
+    bridge.wallet->refreshAsync();
+    ok = true;
+  }
   bridge.wallet->startRefresh();
   return ok;
 }
