@@ -37,6 +37,7 @@ case "$PLATFORM" in
 esac
 
 bash "$ROOT/build/ci/patch-arqma-epee-floor.sh" "$UP"
+bash "$ROOT/build/ci/patch-arqma-register-service-node.sh" "$UP"
 if [[ "$PLATFORM" == mingw ]]; then
   bash "$ROOT/build/ci/patch-arqma-mingw-gui.sh" "$UP"
 fi

@@ -50,8 +50,8 @@ impl Wallet2ApiConfig {
 /// Notes vs upstream `arqma-wallet-rpc`:
 /// - **Transfers**: `transfer_split` maps to native `createTransaction` + `exportPendingRelaySlices` /
 ///   `relayTxFromMetadataHex` when those symbols exist in `wallet2_api.h` (see `arqma-wallet2-api/build.rs`).
-/// - **`register_service_node` / stake unlock helpers**: may return JSON-RPC `error` payloads from the
-///   native stub until a `wallet2_api` hook exists; callers must check the `error` field, not assume `{}`.
+/// - **`register_service_node`**: uses **`Wallet::registerServiceNode`** when **`wallet_merged`** is built with the register-service-node patch.
+/// - **`can_request_stake_unlock` / `request_stake_unlock`**: may return JSON-RPC `error` stubs until exposed on **`wallet2_api`**.
 /// - **`rescan_blockchain` `hard`**: GUI may send `hard: true`; `wallet2_api::Wallet` only exposes
 ///   `rescanBlockchain()` — the flag is accepted but not forwarded separately.
 /// - **`getbalance` `per_subaddress` / `num_unspent_outputs`**: synthesized for RPC parity; `num_unspent_outputs`

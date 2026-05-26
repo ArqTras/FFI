@@ -1290,9 +1290,16 @@ rust::String wallet2_get_transfers_json(
 }
 
 rust::String wallet2_register_service_node_json(Wallet2Bridge& bridge, const std::string& register_service_node_str) {
-  (void) bridge;
-  (void) register_service_node_str;
-  return rust::String("{\"error\":{\"code\":-32603,\"message\":\"register_service_node unavailable in current native build\"}}");
+  if (bridge.wallet == nullptr) {
+    return rust::String("{\"error\":{\"code\":-32603,\"message\":\"wallet is null\"}}");
+  }
+  std::string err;
+  if (!bridge.wallet->registerServiceNode(register_service_node_str, err)) {
+    std::ostringstream oss;
+    oss << "{\"error\":{\"code\":-32603,\"message\":\"" << json_escape(err) << "\"}}";
+    return rust::String(oss.str());
+  }
+  return rust::String("{}");
 }
 
 rust::String wallet2_can_request_stake_unlock_json(Wallet2Bridge& bridge, const std::string& service_node_key) {

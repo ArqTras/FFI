@@ -74,7 +74,8 @@ Behavioral notes:
 
 - **Transfers**: `transfer_split` / `transfer` use native `createTransaction` + `exportPendingRelaySlices` + `relay_tx` + `relayTxFromMetadataHex` when those APIs exist in your headers and merged library (see **`arqma-wallet2-api/build.rs`**). Always rebuild **`wallet_merged`** from the **same** Arqma commit as **`wallet2_api.h`**.
 - **`refresh`**: forwarded to **`Wallet::refresh()`** on a background worker (same pattern as **`rescan_spent`**).
-- **`register_service_node` / stake unlock RPCs**: until **`wallet2_api`** exposes them, the C++ bridge may return a JSON body with an **`error`** field; the Rust adapter passes that through as a JSON-RPC error instead of reporting success.
+- **`register_service_node`**: implemented via **`Wallet::registerServiceNode`** in upstream **`wallet2_api`** (parses the daemon `prepare_registration` line, builds and relays the tx). Rebuild **`wallet_merged`** after changing **`wallet2_api.h`** / **`wallet.cpp`** (CI applies `patch-arqma-register-service-node.sh` on clone).
+- **`can_request_stake_unlock` / `request_stake_unlock`**: still return JSON **`error`** stubs from the C++ bridge until exposed on **`wallet2_api`**.
 - **`getbalance`**: includes **`per_subaddress`** and **`num_unspent_outputs`** for RPC shape parity. On the native bridge, **`num_unspent_outputs`** is a conservative gate (`1` when **`unlocked_balance > 0`**, else `0`) because `wallet2_api` does not expose per-coin counts on this path; use **`incoming_transfers`** when you need an output list.
 - **`incoming_transfers` / `get_version`**: implemented on the Rust adapter; **`incoming_transfers`** maps to the native history **`in`** bucket (see `Wallet2ApiClient`).
 - **Alternate JSON-RPC method names** (e.g. `get_balance` → `getbalance`): see **`arqma-wallet-rpc/src/rpc_method_aliases.rs`**.
