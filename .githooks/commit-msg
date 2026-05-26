@@ -1,0 +1,7 @@
+#!/bin/sh
+# ArqTras/FFI: never record Cursor as co-author on commits.
+if [ -f "$1" ]; then
+  grep -viE '^Co-authored-by:.*cursor|^Co-authored-by:.*cursoragent|^Made-with:.*cursor' "$1" >"$1.tmp" || true
+  mv "$1.tmp" "$1"
+fi
+exit 0

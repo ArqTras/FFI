@@ -1,0 +1,8 @@
+#!/bin/sh
+# ArqTras/FFI: strip Cursor co-author trailers if the editor or IDE appended them.
+MSG_FILE=$1
+if [ -f "$MSG_FILE" ]; then
+  grep -viE '^Co-authored-by:.*cursor|^Co-authored-by:.*cursoragent|^Made-with:.*cursor' "$MSG_FILE" >"$MSG_FILE.tmp" || true
+  mv "$MSG_FILE.tmp" "$MSG_FILE"
+fi
+exit 0
