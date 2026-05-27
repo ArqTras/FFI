@@ -18,9 +18,6 @@ fi
 
 # MinGW g++ 16+ (MSYS2 / CI): epee uses floor() without <cmath> — must run for cached clones too.
 bash "$ROOT/build/ci/patch-arqma-epee-floor.sh" "$DEST"
-bash "$ROOT/build/ci/patch-arqma-register-service-node.sh" "$DEST"
 # Upstream CMake/FFI patches (RandomX ARCH_ID, MinGW GUI bits, stack_trace, …) — must run for cached clones too; does not build arqmad.
 bash "$ROOT/build/ci/patch-arqma-mingw-gui.sh" "$DEST"
-bash "$ROOT/build/ci/patch-arqma-slow-hash-typo.sh" "$DEST"
-bash "$ROOT/build/ci/apply-upstream-overlay.sh"
-bash "$ROOT/build/ci/patch-arqma-ios-translations.sh" "$DEST"
+bash "$ROOT/build/ci/patch-arqma-register-service-node.sh" "$DEST"

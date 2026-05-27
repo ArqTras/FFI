@@ -1293,6 +1293,11 @@ rust::String wallet2_register_service_node_json(Wallet2Bridge& bridge, const std
   if (bridge.wallet == nullptr) {
     return rust::String("{\"error\":{\"code\":-32603,\"message\":\"wallet is null\"}}");
   }
+#if !defined(ARQMA_WALLET2_HAS_REGISTER_SERVICE_NODE)
+  (void)register_service_node_str;
+  return rust::String(
+      "{\"error\":{\"code\":-32603,\"message\":\"register_service_node not available in this native build\"}}");
+#else
   std::string err;
   if (!bridge.wallet->registerServiceNode(register_service_node_str, err)) {
     std::ostringstream oss;
@@ -1300,6 +1305,7 @@ rust::String wallet2_register_service_node_json(Wallet2Bridge& bridge, const std
     return rust::String(oss.str());
   }
   return rust::String("{}");
+#endif
 }
 
 rust::String wallet2_can_request_stake_unlock_json(Wallet2Bridge& bridge, const std::string& service_node_key) {
@@ -1335,9 +1341,9 @@ std::uint64_t wallet2_unlocked_balance(const Wallet2Bridge& bridge) {
   return bridge.wallet->unlockedBalanceAll();
 }
 
-// `cryptonote_core` in `libwallet_merged.a` references `windows::check_admin` from
-// `daemonizer/windows_service.cpp`; some CMake targets omit that TU from `wallet_merged`.
-#if defined(WIN32)
+// `cryptonote_core` references `windows::check_admin` from daemonizer. MinGW CI adds daemonizer to
+// `wallet_merged` (patch-arqma-mingw-gui); only provide a stub when that TU is not in the merged lib.
+#if defined(WIN32) && !defined(ARQMA_WALLET2_DAEMONIZER_IN_MERGED)
 #undef UNICODE
 #undef _UNICODE
 #include <windows.h>

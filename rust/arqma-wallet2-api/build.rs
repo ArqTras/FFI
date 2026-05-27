@@ -109,6 +109,7 @@ fn main() {
         && has_relay_from_hex;
     let has_destination_amounts_per_slice = header_text.contains("destinationAmountsPerSlice");
     let has_slice_relay = has_export_pending_relay && has_destination_amounts_per_slice;
+    let has_register_service_node = header_text.contains("registerServiceNode");
 
     println!("cargo:rerun-if-env-changed=ARQMA_WALLET2_UPSTREAM_DIR");
     println!("cargo:rerun-if-changed=src/native.rs");
@@ -134,6 +135,8 @@ fn main() {
         if let Some(compiler) = resolve_mingw_gxx_exe() {
             b.compiler(compiler);
         }
+        // patch-arqma-mingw-gui.js adds daemonizer to wallet_merged; do not also emit check_admin stub.
+        b.define("ARQMA_WALLET2_DAEMONIZER_IN_MERGED", "1");
     }
     if has_export_pending_relay {
         b.define("ARQMA_WALLET2_HAS_EXPORT_PENDING_RELAY", "1");
@@ -143,6 +146,9 @@ fn main() {
     }
     if has_relay_from_hex {
         b.define("ARQMA_WALLET2_HAS_RELAY_FROM_HEX", "1");
+    }
+    if has_register_service_node {
+        b.define("ARQMA_WALLET2_HAS_REGISTER_SERVICE_NODE", "1");
     }
     b.file("src/wallet2_api_wrapper.cpp")
         .include("src")
@@ -173,26 +179,6 @@ fn wallet_ffi_static_hybrid() -> bool {
     std::env::var("ARQMA_WALLET_FFI_STATIC_HYBRID")
         .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
-}
-
-fn wallet_ffi_use_depends() -> bool {
-    std::env::var("ARQMA_WALLET_FFI_USE_DEPENDS")
-        .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
-        .unwrap_or(false)
-}
-
-fn macos_depends_lib_dir(upstream_path: &Path) -> Option<PathBuf> {
-    let host = match std::env::var("CARGO_CFG_TARGET_ARCH").ok().as_deref() {
-        Some("aarch64") => "aarch64-apple-darwin",
-        Some("x86_64") => "x86_64-apple-darwin",
-        _ => return None,
-    };
-    let lib = upstream_path.join("contrib/depends").join(host).join("lib");
-    if lib.is_dir() && (lib.join("libssl.a").is_file() || lib.join("libzmq.a").is_file()) {
-        Some(lib)
-    } else {
-        None
-    }
 }
 
 fn find_wallet_merged_dir(upstream: &Path) -> Option<PathBuf> {
@@ -291,9 +277,13 @@ fn brew_prefix() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("/opt/homebrew"))
 }
 
-/// Linux/macOS: `contrib/depends` build — do not add distro/Homebrew `-L` paths that shadow vendored `.a`.
+/// Linux/macOS: `contrib/depends` + static-hybrid — do not add distro/Homebrew `-L` paths that shadow
+/// the vendored static archives (e.g. Ubuntu `libboost_*.a` in `/usr` breaks PIC when linking `.so`).
 fn wallet_ffi_depends_vendor_paths_suppressed() -> bool {
-    wallet_ffi_use_depends()
+    wallet_ffi_static_hybrid()
+        && std::env::var("ARQMA_WALLET_FFI_USE_DEPENDS")
+            .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false)
 }
 
 fn configure_wallet2_linking_macos(upstream_path: &Path) {
@@ -322,10 +312,6 @@ fn configure_wallet2_linking_macos(upstream_path: &Path) {
                 println!("cargo:rustc-link-search=native={}", p.display());
             }
         }
-    }
-
-    if let Some(depends_lib) = macos_depends_lib_dir(upstream_path) {
-        println!("cargo:rustc-link-search=native={}", depends_lib.display());
     }
 
     let bp = brew_prefix();
