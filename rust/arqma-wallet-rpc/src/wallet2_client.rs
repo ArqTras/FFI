@@ -13,6 +13,16 @@ use crate::error::WalletRpcError;
 use crate::rpc_method_aliases::canonical_wallet_rpc_method;
 use crate::traits::WalletJsonRpc;
 
+/// Wallet2 `stakePending(..., amount, ...)` expects a **decimal coin string** (Arq: 9 fractional digits),
+/// not raw atomic units. JSON-RPC `stake` still uses `amount` in atoms for parity with the GUI.
+#[inline]
+fn arq_atoms_to_stake_amount_string(amount_atoms: u64) -> String {
+    const ATOMS_PER_COIN: u64 = 1_000_000_000;
+    let whole = amount_atoms / ATOMS_PER_COIN;
+    let frac = amount_atoms % ATOMS_PER_COIN;
+    format!("{whole}.{frac:09}")
+}
+
 #[derive(Clone, Debug)]
 pub struct Wallet2ApiConfig {
     pub wallet_dir: String,
@@ -50,8 +60,8 @@ impl Wallet2ApiConfig {
 /// Notes vs upstream `arqma-wallet-rpc`:
 /// - **Transfers**: `transfer_split` maps to native `createTransaction` + `exportPendingRelaySlices` /
 ///   `relayTxFromMetadataHex` when those symbols exist in `wallet2_api.h` (see `arqma-wallet2-api/build.rs`).
-/// - **`register_service_node`**: uses **`Wallet::registerServiceNode`** when **`wallet_merged`** is built with the register-service-node patch.
-/// - **`can_request_stake_unlock` / `request_stake_unlock`**: may return JSON-RPC `error` stubs until exposed on **`wallet2_api`**.
+/// - **`register_service_node` / stake unlock helpers**: may return JSON-RPC `error` payloads from the
+///   native stub until a `wallet2_api` hook exists; callers must check the `error` field, not assume `{}`.
 /// - **`rescan_blockchain` `hard`**: GUI may send `hard: true`; `wallet2_api::Wallet` only exposes
 ///   `rescanBlockchain()` — the flag is accepted but not forwarded separately.
 /// - **`getbalance` `per_subaddress` / `num_unspent_outputs`**: synthesized for RPC parity; `num_unspent_outputs`
@@ -882,8 +892,9 @@ impl Wallet2ApiClient {
                 let s = g.as_mut().ok_or_else(|| {
                     WalletRpcError::Transport("wallet2: no wallet session".to_string())
                 })?;
+                let amount_str = arq_atoms_to_stake_amount_string(amount_atoms);
                 let raw = s
-                    .stake_prepare_json(service_node_key, &amount_atoms.to_string())
+                    .stake_prepare_json(service_node_key, &amount_str)
                     .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
                 let parsed = serde_json::from_str::<Value>(&raw)
                     .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
