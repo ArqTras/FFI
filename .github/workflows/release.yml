@@ -495,19 +495,30 @@ jobs:
       - solo-pool-windows
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
       - name: List release assets
         run: find artifacts -type f -name '*.zip' | sort
+      - name: SHA256SUMS for FFI zips
+        run: |
+          set -eu
+          VER="${{ needs.resolve-version.outputs.version }}"
+          OUT="artifacts/SHA256SUMS-ffi-${VER}.txt"
+          find artifacts -type f -name '*.zip' -print0 | sort -z | xargs -0 shasum -a 256 | sed 's| artifacts/||' > "${OUT}"
+          cat "${OUT}"
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.resolve-version.outputs.tag }}
           name: Arqma Wallet FFI ${{ needs.resolve-version.outputs.version }}
-          generate_release_notes: true
-          files: artifacts/*.zip
+          body_path: build/ci/release-notes-ffi-${{ needs.resolve-version.outputs.version }}.md
+          generate_release_notes: false
+          files: |
+            artifacts/**/*.zip
+            artifacts/SHA256SUMS-ffi-*.txt
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

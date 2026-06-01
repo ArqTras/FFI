@@ -79,6 +79,7 @@ void wallet2_create_wallet(
   const std::string& daemon
 );
 bool wallet2_rescan_blockchain(Wallet2Bridge& bridge);
+void wallet2_rescan_blockchain_async(Wallet2Bridge& bridge);
 bool wallet2_rescan_spent(Wallet2Bridge& bridge);
 /// Synchronous refresh (matches `arqma-wallet-rpc` `refresh`): pull new blocks / txs from the daemon.
 bool wallet2_refresh(Wallet2Bridge& bridge);

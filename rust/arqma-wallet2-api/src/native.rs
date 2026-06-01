@@ -77,6 +77,7 @@ mod ffi {
             daemon: &CxxString,
         ) -> Result<()>;
         fn wallet2_rescan_blockchain(bridge: Pin<&mut Wallet2Bridge>) -> Result<bool>;
+        fn wallet2_rescan_blockchain_async(bridge: Pin<&mut Wallet2Bridge>) -> Result<()>;
         fn wallet2_rescan_spent(bridge: Pin<&mut Wallet2Bridge>) -> Result<bool>;
         fn wallet2_refresh(bridge: Pin<&mut Wallet2Bridge>) -> Result<bool>;
         fn wallet2_refresh_from_height(
@@ -342,6 +343,12 @@ impl NativeWallet2Session {
     pub fn rescan_blockchain(&mut self) -> Wallet2Result<bool> {
         let mut b = self.bridge.pin_mut();
         ffi::wallet2_rescan_blockchain(b.as_mut())
+            .map_err(|e| Wallet2Error::OperationFailed(e.to_string()))
+    }
+
+    pub fn rescan_blockchain_async(&mut self) -> Wallet2Result<()> {
+        let mut b = self.bridge.pin_mut();
+        ffi::wallet2_rescan_blockchain_async(b.as_mut())
             .map_err(|e| Wallet2Error::OperationFailed(e.to_string()))
     }
 

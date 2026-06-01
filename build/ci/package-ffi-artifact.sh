@@ -66,5 +66,7 @@ case "${PLATFORM}" in
 esac
 OUT="${ROOT}/dist/arqma-wallet-ffi-${PLATFORM}-${VER}.zip"
 (cd "${ROOT}/dist" && zip -qr "$(basename "${OUT}")" "${PLATFORM}")
-echo "artifact=${OUT}" >> "${GITHUB_OUTPUT}"
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  echo "artifact=${OUT}" >> "${GITHUB_OUTPUT}"
+fi
 ls -la "${OUT}"

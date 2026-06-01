@@ -282,6 +282,10 @@ impl Wallet2Session {
         self.inner.rescan_blockchain()
     }
 
+    pub fn rescan_blockchain_async(&mut self) -> Wallet2Result<()> {
+        self.inner.rescan_blockchain_async()
+    }
+
     pub fn rescan_spent(&mut self) -> Wallet2Result<bool> {
         self.inner.rescan_spent()
     }

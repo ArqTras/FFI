@@ -567,6 +567,13 @@ bool wallet2_rescan_blockchain(Wallet2Bridge& bridge) {
   return bridge.wallet->rescanBlockchain();
 }
 
+void wallet2_rescan_blockchain_async(Wallet2Bridge& bridge) {
+  if (bridge.wallet == nullptr) {
+    throw std::runtime_error("wallet is null");
+  }
+  bridge.wallet->rescanBlockchainAsync();
+}
+
 bool wallet2_rescan_spent(Wallet2Bridge& bridge) {
   if (bridge.wallet == nullptr) {
     throw std::runtime_error("wallet is null");

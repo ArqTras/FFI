@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use arqma_wallet2_api::{NetworkKind, Wallet2OpenConfig, Wallet2Session};
 
@@ -343,23 +343,99 @@ impl Wallet2ApiClient {
         }))
     }
 
+    /// Full rescan via `rescanBlockchainAsync` so the session mutex is not held for hours.
+    /// A poller updates [`Self::height_stale_cache`] for heartbeat / UI while the wallet scans.
+    fn spawn_rescan_blockchain_async(&self) -> Result<Value, WalletRpcError> {
+        if self.wallet_background_busy.swap(true, Ordering::SeqCst) {
+            return Err(WalletRpcError::Transport(
+                "wallet2: background operation already running (rescan_blockchain)".to_string(),
+            ));
+        }
+        let inner = self.inner.clone();
+        let busy = self.wallet_background_busy.clone();
+        let height_cache = self.height_stale_cache.clone();
+        let pre_tip = height_cache.load(Ordering::Acquire);
+        height_cache.store(0, Ordering::Release);
+
+        thread::spawn(move || {
+            struct BusyGuard(Arc<AtomicBool>);
+            impl Drop for BusyGuard {
+                fn drop(&mut self) {
+                    self.0.store(false, Ordering::SeqCst);
+                }
+            }
+            let _guard = BusyGuard(busy);
+
+            let started = (|| -> Result<(), WalletRpcError> {
+                let mut g = inner
+                    .lock()
+                    .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
+                let Some(s) = g.as_mut() else {
+                    return Err(WalletRpcError::Transport(
+                        "wallet2: no wallet session".to_string(),
+                    ));
+                };
+                s.rescan_blockchain_async()
+                    .map_err(|e| WalletRpcError::Transport(e.to_string()))
+            })();
+            if let Err(e) = started {
+                eprintln!("[wallet2] background rescan_blockchain_async start: {e}");
+                return;
+            }
+
+            const POLL: Duration = Duration::from_secs(2);
+            const TIP_BAND: u64 = 16;
+            const FLAT_TICKS_DONE: u64 = 30; // ~60 s without height change near tip
+            let mut last_h: u64 = 0;
+            let mut flat_ticks: u64 = 0;
+
+            loop {
+                thread::sleep(POLL);
+                let h = match inner.try_lock() {
+                    Ok(guard) => {
+                        let g = guard;
+                        match g.as_ref() {
+                            Some(s) => match s.height() {
+                                Ok(h) => h,
+                                Err(_) => height_cache.load(Ordering::Acquire),
+                            },
+                            None => height_cache.load(Ordering::Acquire),
+                        }
+                    }
+                    Err(_) => height_cache.load(Ordering::Acquire),
+                };
+                if h > 0 {
+                    height_cache.store(h, Ordering::Release);
+                }
+                if pre_tip > 0 && h + TIP_BAND >= pre_tip {
+                    break;
+                }
+                if h == last_h {
+                    flat_ticks += 1;
+                    if flat_ticks >= FLAT_TICKS_DONE && h > 0 {
+                        break;
+                    }
+                } else {
+                    flat_ticks = 0;
+                    last_h = h;
+                }
+            }
+        });
+
+        Ok(json!({
+          "result": {
+            "async": true,
+            "background": "rescan_blockchain",
+          }
+        }))
+    }
+
     pub async fn call_json(&self, method: &str, _params: &Value) -> Result<Value, WalletRpcError> {
         let method = canonical_wallet_rpc_method(method);
         match method {
             "rescan_blockchain" => {
-                // Do **not** zero `height_stale_cache` here: `rescan_blockchain` holds `inner` for the whole job,
-                // so `getheight` only sees the stale path — a forced `0` makes the GUI stuck at “0 / tip” until done.
-                return self.spawn_wallet_background_job("rescan_blockchain", |s| {
-                    let ok = s
-                        .rescan_blockchain()
-                        .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
-                    if !ok {
-                        return Err(WalletRpcError::Transport(
-                            "wallet2: rescan_blockchain unsupported".to_string(),
-                        ));
-                    }
-                    Ok(())
-                });
+                // Async rescan + height poller keeps `getheight` stale cache fresh for Flutter heartbeat.
+                return self.spawn_rescan_blockchain_async();
             }
             "rescan_spent" => {
                 return self.spawn_wallet_background_job("rescan_spent", |s| {
