@@ -104,6 +104,19 @@ impl Wallet2ApiClient {
     }
 
     fn getheight_nonblocking_or_stale(&self) -> Result<Value, WalletRpcError> {
+        if self.wallet_background_busy.load(Ordering::Acquire) {
+            if let Ok(guard) = self.inner.try_lock() {
+                if let Some(s) = guard.as_ref() {
+                    if let Ok((wallet_h, _daemon_h)) = s.scan_heights() {
+                        self.height_stale_cache
+                            .store(wallet_h, Ordering::Release);
+                        return Ok(json!({ "result": { "height": wallet_h } }));
+                    }
+                }
+            }
+            let h = self.height_stale_cache.load(Ordering::Acquire);
+            return Ok(json!({ "result": { "height": h } }));
+        }
         match self.inner.try_lock() {
             Ok(guard) => {
                 let g = guard;
@@ -464,39 +477,49 @@ impl Wallet2ApiClient {
 
             const POLL: Duration = Duration::from_secs(2);
             const TIP_BAND: u64 = 16;
+            const REWIND_BAND: u64 = 32;
             const FLAT_TICKS_DONE: u64 = 30; // ~60 s without height change near tip
             let mut last_h: u64 = 0;
             let mut flat_ticks: u64 = 0;
+            let mut saw_rewind = pre_tip == 0;
 
             loop {
                 thread::sleep(POLL);
-                let h = match inner.try_lock() {
-                    Ok(guard) => {
-                        let g = guard;
-                        match g.as_ref() {
-                            Some(s) => match s.height() {
-                                Ok(h) => h,
-                                Err(_) => height_cache.load(Ordering::Acquire),
-                            },
-                            None => height_cache.load(Ordering::Acquire),
-                        }
-                    }
-                    Err(_) => height_cache.load(Ordering::Acquire),
+                let (wallet_h, daemon_h) = match inner.try_lock() {
+                    Ok(guard) => match guard.as_ref() {
+                        Some(s) => s
+                            .scan_heights()
+                            .unwrap_or((height_cache.load(Ordering::Acquire), 0)),
+                        None => (height_cache.load(Ordering::Acquire), 0),
+                    },
+                    Err(_) => (height_cache.load(Ordering::Acquire), 0),
                 };
-                if h > 0 {
-                    height_cache.store(h, Ordering::Release);
+                if wallet_h > 0 {
+                    height_cache.store(wallet_h, Ordering::Release);
                 }
-                if pre_tip > 0 && h + TIP_BAND >= pre_tip {
-                    break;
+                if pre_tip > 0 && wallet_h + REWIND_BAND < pre_tip {
+                    saw_rewind = true;
                 }
-                if h == last_h {
-                    flat_ticks += 1;
-                    if flat_ticks >= FLAT_TICKS_DONE && h > 0 {
+                if saw_rewind {
+                    if daemon_h > 0 && wallet_h + TIP_BAND >= daemon_h {
                         break;
+                    }
+                    if wallet_h == last_h {
+                        flat_ticks += 1;
+                        if flat_ticks >= FLAT_TICKS_DONE
+                            && wallet_h > 0
+                            && daemon_h > 0
+                            && wallet_h + TIP_BAND >= daemon_h
+                        {
+                            break;
+                        }
+                    } else {
+                        flat_ticks = 0;
+                        last_h = wallet_h;
                     }
                 } else {
                     flat_ticks = 0;
-                    last_h = h;
+                    last_h = wallet_h;
                 }
             }
         });
