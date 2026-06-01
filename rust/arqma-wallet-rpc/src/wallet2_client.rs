@@ -343,6 +343,85 @@ impl Wallet2ApiClient {
         }))
     }
 
+    /// Non-blocking wallet catch-up (`refreshAsync`) with a height poller for Flutter heartbeat / Live Activity.
+    fn spawn_wallet_sync_async(&self, start_height: Option<u64>) -> Result<Value, WalletRpcError> {
+        if self.wallet_background_busy.swap(true, Ordering::SeqCst) {
+            return Err(WalletRpcError::Transport(
+                "wallet2: background operation already running (refresh)".to_string(),
+            ));
+        }
+        let inner = self.inner.clone();
+        let busy = self.wallet_background_busy.clone();
+        let height_cache = self.height_stale_cache.clone();
+        thread::spawn(move || {
+            struct BusyGuard(Arc<AtomicBool>);
+            impl Drop for BusyGuard {
+                fn drop(&mut self) {
+                    self.0.store(false, Ordering::SeqCst);
+                }
+            }
+            let _guard = BusyGuard(busy);
+
+            let started = (|| -> Result<(), WalletRpcError> {
+                let mut g = inner
+                    .lock()
+                    .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
+                let Some(s) = g.as_mut() else {
+                    return Err(WalletRpcError::Transport(
+                        "wallet2: no wallet session".to_string(),
+                    ));
+                };
+                s.refresh_async_start(start_height)
+                    .map_err(|e| WalletRpcError::Transport(e.to_string()))
+            })();
+            if let Err(e) = started {
+                eprintln!("[wallet2] refresh_async_start: {e}");
+                return;
+            }
+
+            const POLL: Duration = Duration::from_secs(2);
+            const TIP_BAND: u64 = 16;
+            const FLAT_TICKS_DONE: u64 = 30;
+            let mut last_h: u64 = 0;
+            let mut flat_ticks: u64 = 0;
+
+            loop {
+                thread::sleep(POLL);
+                let (wallet_h, daemon_h) = match inner.try_lock() {
+                    Ok(guard) => match guard.as_ref() {
+                        Some(s) => s
+                            .scan_heights()
+                            .unwrap_or((height_cache.load(Ordering::Acquire), 0)),
+                        None => (height_cache.load(Ordering::Acquire), 0),
+                    },
+                    Err(_) => (height_cache.load(Ordering::Acquire), 0),
+                };
+                if wallet_h > 0 {
+                    height_cache.store(wallet_h, Ordering::Release);
+                }
+                if daemon_h > 0 && wallet_h + TIP_BAND >= daemon_h {
+                    break;
+                }
+                if wallet_h == last_h {
+                    flat_ticks += 1;
+                    if flat_ticks >= FLAT_TICKS_DONE && wallet_h > 0 {
+                        break;
+                    }
+                } else {
+                    flat_ticks = 0;
+                    last_h = wallet_h;
+                }
+            }
+        });
+
+        Ok(json!({
+          "result": {
+            "async": true,
+            "background": "refresh",
+          }
+        }))
+    }
+
     /// Full rescan via `rescanBlockchainAsync` so the session mutex is not held for hours.
     /// A poller updates [`Self::height_stale_cache`] for heartbeat / UI while the wallet scans.
     fn spawn_rescan_blockchain_async(&self) -> Result<Value, WalletRpcError> {
@@ -455,30 +534,7 @@ impl Wallet2ApiClient {
                     .get("start_height")
                     .or_else(|| _params.get("refresh_start_height"))
                     .and_then(|v| v.as_u64());
-                if let Some(h) = start_height {
-                    return self.spawn_wallet_background_job("refresh_from_height", move |s| {
-                        let ok = s
-                            .refresh_from_height(h)
-                            .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
-                        if !ok {
-                            // After pauseRefresh+refresh in C++, false usually means daemon not ready.
-                            eprintln!(
-                                "[wallet2] refresh_from_height({h}) returned false (daemon busy or refresh skipped)"
-                            );
-                        }
-                        Ok(())
-                    });
-                }
-                return self.spawn_wallet_background_job("refresh", |s| {
-                    let ok = s
-                        .refresh()
-                        .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
-                    if !ok {
-                        // Often means background startRefresh already holds the refresh mutex.
-                        return Ok(());
-                    }
-                    Ok(())
-                });
+                return self.spawn_wallet_sync_async(start_height);
             }
             "getheight" => {
                 return self.getheight_nonblocking_or_stale();

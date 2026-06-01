@@ -616,6 +616,36 @@ bool wallet2_refresh_from_height(Wallet2Bridge& bridge, std::uint64_t start_heig
   return ok;
 }
 
+void wallet2_refresh_async_start(
+  Wallet2Bridge& bridge,
+  std::uint64_t start_height,
+  bool use_start_height
+) {
+  if (bridge.wallet == nullptr) {
+    throw std::runtime_error("wallet is null");
+  }
+  bridge.wallet->pauseRefresh();
+  if (use_start_height) {
+    bridge.wallet->setRefreshFromBlockHeight(start_height);
+  }
+  bridge.wallet->refreshAsync();
+  bridge.wallet->startRefresh();
+}
+
+void wallet2_read_scan_heights(
+  const Wallet2Bridge& bridge,
+  std::uint64_t& wallet_height,
+  std::uint64_t& daemon_height
+) {
+  wallet_height = 0;
+  daemon_height = 0;
+  if (bridge.wallet == nullptr) {
+    return;
+  }
+  wallet_height = bridge.wallet->blockChainHeight();
+  daemon_height = bridge.wallet->daemonBlockChainHeight();
+}
+
 bool wallet2_import_key_images(const Wallet2Bridge& bridge, const std::string& filename) {
   if (bridge.wallet == nullptr) {
     throw std::runtime_error("wallet is null");

@@ -298,6 +298,14 @@ impl Wallet2Session {
         self.inner.refresh_from_height(start_height)
     }
 
+    pub fn refresh_async_start(&mut self, start_height: Option<u64>) -> Wallet2Result<()> {
+        self.inner.refresh_async_start(start_height)
+    }
+
+    pub fn scan_heights(&self) -> Wallet2Result<(u64, u64)> {
+        self.inner.scan_heights()
+    }
+
     pub fn import_key_images(&self, filename: &str) -> Wallet2Result<bool> {
         self.inner.import_key_images(filename)
     }

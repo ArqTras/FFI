@@ -84,6 +84,16 @@ mod ffi {
             bridge: Pin<&mut Wallet2Bridge>,
             start_height: u64,
         ) -> Result<bool>;
+        fn wallet2_refresh_async_start(
+            bridge: Pin<&mut Wallet2Bridge>,
+            start_height: u64,
+            use_start_height: bool,
+        ) -> Result<()>;
+        fn wallet2_read_scan_heights(
+            bridge: &Wallet2Bridge,
+            wallet_height: &mut u64,
+            daemon_height: &mut u64,
+        ) -> Result<()>;
         fn wallet2_import_key_images(bridge: &Wallet2Bridge, filename: &CxxString) -> Result<bool>;
         fn wallet2_stake_prepare_json(
             bridge: Pin<&mut Wallet2Bridge>,
@@ -368,6 +378,28 @@ impl NativeWallet2Session {
         let mut b = self.bridge.pin_mut();
         ffi::wallet2_refresh_from_height(b.as_mut(), start_height)
             .map_err(|e| Wallet2Error::OperationFailed(e.to_string()))
+    }
+
+    pub fn refresh_async_start(&mut self, start_height: Option<u64>) -> Wallet2Result<()> {
+        let mut b = self.bridge.pin_mut();
+        let (height, use_start) = match start_height {
+            Some(h) => (h, true),
+            None => (0, false),
+        };
+        ffi::wallet2_refresh_async_start(b.as_mut(), height, use_start)
+            .map_err(|e| Wallet2Error::OperationFailed(e.to_string()))
+    }
+
+    pub fn scan_heights(&self) -> Wallet2Result<(u64, u64)> {
+        let mut wallet_height: u64 = 0;
+        let mut daemon_height: u64 = 0;
+        ffi::wallet2_read_scan_heights(
+            &self.bridge,
+            &mut wallet_height,
+            &mut daemon_height,
+        )
+        .map_err(|e| Wallet2Error::OperationFailed(e.to_string()))?;
+        Ok((wallet_height, daemon_height))
     }
 
     pub fn import_key_images(&self, filename: &str) -> Wallet2Result<bool> {
