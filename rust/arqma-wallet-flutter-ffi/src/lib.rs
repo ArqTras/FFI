@@ -14,6 +14,8 @@ use serde_json::{json, Value};
 
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 static CLIENT: Mutex<Option<Wallet2ApiClient>> = Mutex::new(None);
+/// One in-flight `call_json` / `configure` / `reset` — wallet2 is not safe across threads or Dart isolates.
+static CALL_SERIAL: Mutex<()> = Mutex::new(());
 
 fn runtime () -> &'static tokio::runtime::Runtime {
   RUNTIME.get_or_init(|| {
@@ -38,6 +40,35 @@ fn value_to_cstring (v: &Value) -> Result<CString, ()> {
   CString::new(s).map_err(|_| ())
 }
 
+/// wallet2 `openWallet` / restore can overflow the default Dart isolate stack (~1 MiB on macOS).
+/// Run heavy RPC on a dedicated pthread with a larger stack (CLI uses a full process stack).
+fn method_needs_large_stack (method: &str) -> bool {
+  matches!(
+    method,
+    "open_wallet"
+      | "close_wallet"
+      | "stop_wallet"
+      | "restore_deterministic_wallet"
+      | "create_wallet"
+      | "generate_from_keys"
+  )
+}
+
+fn run_on_large_stack<F, R> (f: F) -> R
+where
+  F: FnOnce() -> R + Send + 'static,
+  R: Send + 'static,
+{
+  const STACK_BYTES: usize = 8 * 1024 * 1024;
+  std::thread::Builder::new()
+    .name("arqma_wallet2_heavy".into())
+    .stack_size(STACK_BYTES)
+    .spawn(f)
+    .expect("arqma_wallet2_heavy thread spawn")
+    .join()
+    .expect("arqma_wallet2_heavy thread join")
+}
+
 /// `0` = success, negative = error (caller must not use `out_json`).
 #[no_mangle]
 pub unsafe extern "C" fn arqma_wallet_ffi_configure (
@@ -56,6 +87,9 @@ pub unsafe extern "C" fn arqma_wallet_ffi_configure (
     Ok(s) => s.to_string(),
     Err(_) => return -2,
   };
+  let Ok(_call_guard) = CALL_SERIAL.lock() else {
+    return -3;
+  };
   let Ok(mut g) = CLIENT.lock() else {
     return -3;
   };
@@ -71,6 +105,9 @@ pub unsafe extern "C" fn arqma_wallet_ffi_configure (
 /// Drop the native client (optional `close_wallet` should be done from Dart via [`arqma_wallet_ffi_call_json`] first).
 #[no_mangle]
 pub unsafe extern "C" fn arqma_wallet_ffi_reset () -> c_int {
+  let Ok(_call_guard) = CALL_SERIAL.lock() else {
+    return -3;
+  };
   let Ok(mut g) = CLIENT.lock() else {
     return -3;
   };
@@ -103,6 +140,9 @@ pub unsafe extern "C" fn arqma_wallet_ffi_call_json (
     Ok(v) => v,
     Err(_) => Value::Null,
   };
+  let Ok(_call_guard) = CALL_SERIAL.lock() else {
+    return -3;
+  };
   let client = match CLIENT.lock() {
     Ok(g) => g,
     Err(_) => return -3,
@@ -115,7 +155,15 @@ pub unsafe extern "C" fn arqma_wallet_ffi_call_json (
   drop(client);
 
   let result = catch_unwind(AssertUnwindSafe(|| {
-    runtime().block_on(c.call_json(method_s, &params))
+    if method_needs_large_stack(method_s) {
+      let method_owned = method_s.to_string();
+      let params_owned = params.clone();
+      run_on_large_stack(move || {
+        runtime().block_on(c.call_json(&method_owned, &params_owned))
+      })
+    } else {
+      runtime().block_on(c.call_json(method_s, &params))
+    }
   }));
   let mapped: Value = match result {
     Ok(Ok(v)) => v,

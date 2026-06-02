@@ -624,16 +624,15 @@ impl Wallet2ApiClient {
                         )
                     })?;
                 let path = resolve_wallet_path(&self.cfg.wallet_dir, filename);
-                let mut session = Wallet2Session::open(&Wallet2OpenConfig {
+                let session = Wallet2Session::open(&Wallet2OpenConfig {
                     wallet_path: path,
                     password: password.to_string(),
                     daemon_address: self.cfg.daemon_address.clone(),
                     network: self.cfg.network.clone(),
                 })
                 .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
-                if let Err(e) = session.refresh_async_start(None) {
-                    eprintln!("[wallet2] open_wallet refresh_async_start: {e}");
-                }
+                // Defer background sync to the first `refresh` RPC (Flutter heartbeat / post-open).
+                // Starting `refreshAsync` here while the daemon is still down can hang or crash wallet2.
                 *g = Some(session);
                 Ok(json!({ "result": {} }))
             }
