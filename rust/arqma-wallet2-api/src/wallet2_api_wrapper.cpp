@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cinttypes>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -259,6 +260,11 @@ static std::string wallet2_exception_message(const char* context) {
   } catch (const std::exception& e) {
     const char* w = e.what();
     if (w != nullptr && w[0] != '\0') {
+      // libc++/Boost sometimes surface type names (e.g. "basic_string") instead of a message.
+      if (std::strcmp(w, "basic_string") == 0 || std::strcmp(w, "std::exception") == 0) {
+        return std::string(context) +
+               ": wallet operation failed (try closing the app and reopening the wallet)";
+      }
       return std::string(context) + ": " + w;
     }
     return std::string(context) + ": std::exception";

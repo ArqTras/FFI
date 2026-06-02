@@ -601,6 +601,7 @@ impl Wallet2ApiClient {
         }
         match method {
             "open_wallet" => {
+                self.wait_background_idle(Duration::from_secs(30));
                 self.wallet_background_busy.store(false, Ordering::SeqCst);
                 if let Some(mut old) = g.take() {
                     let _ = old.close();
