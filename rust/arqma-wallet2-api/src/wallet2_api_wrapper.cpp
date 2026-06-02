@@ -249,42 +249,76 @@ void clear_pending(Wallet2Bridge& bridge) {
   bridge.pending_by_metadata.clear();
 }
 
+static std::string wallet2_exception_message(const char* context) {
+  try {
+    throw;
+  } catch (const std::bad_alloc&) {
+    return std::string(context) +
+           ": not enough memory (wallet cache may be too large for this device — "
+           "try desktop or free storage/RAM)";
+  } catch (const std::exception& e) {
+    const char* w = e.what();
+    if (w != nullptr && w[0] != '\0') {
+      return std::string(context) + ": " + w;
+    }
+    return std::string(context) + ": std::exception";
+  } catch (...) {
+    return std::string(context) + ": unknown exception";
+  }
+}
+
 std::unique_ptr<Wallet2Bridge> wallet2_open(
   const std::string& path,
   const std::string& password,
   const std::string& daemon,
   std::uint8_t network
 ) {
-  auto bridge = std::make_unique<Wallet2Bridge>();
-  bridge->manager = Monero::WalletManagerFactory::getWalletManager();
-  if (bridge->manager == nullptr) {
-    throw std::runtime_error("WalletManagerFactory::getWalletManager returned null");
-  }
+  try {
+    auto bridge = std::make_unique<Wallet2Bridge>();
+    bridge->manager = Monero::WalletManagerFactory::getWalletManager();
+    if (bridge->manager == nullptr) {
+      throw std::runtime_error("WalletManagerFactory::getWalletManager returned null");
+    }
 
-  std::string path_s(path);
-  std::string pass_s(password);
-  std::string daemon_s(daemon);
-  bridge->wallet = bridge->manager->openWallet(path_s, pass_s, to_network(network));
-  if (bridge->wallet == nullptr) {
-    throw std::runtime_error("openWallet returned null");
-  }
-  // `WalletManagerImpl::openWallet` ALWAYS returns a non-null wallet, even after a
-  // failed load (e.g. wallet does not exist on disk yet). The wallet ends up in
-  // `Status_Critical` and a subsequent `init(daemon)` would CLEAR that status, leaving
-  // a broken session that would later create empty wallet cache files on `closeWallet`.
-  // Detect the failure here and roll back without touching the filesystem.
-  if (bridge->wallet->status() != Monero::Wallet::Status_Ok) {
-    std::string err = bridge->wallet->errorString();
-    bridge->manager->closeWallet(bridge->wallet, false);
-    bridge->wallet = nullptr;
-    throw std::runtime_error(err.empty() ? "openWallet failed" : err);
-  }
+    std::string path_s(path);
+    std::string pass_s(password);
+    std::string daemon_s(daemon);
+    bridge->wallet = bridge->manager->openWallet(path_s, pass_s, to_network(network));
+    if (bridge->wallet == nullptr) {
+      throw std::runtime_error("openWallet returned null");
+    }
+    // `WalletManagerImpl::openWallet` ALWAYS returns a non-null wallet, even after a
+    // failed load (e.g. wallet does not exist on disk yet). The wallet ends up in
+    // `Status_Critical` and a subsequent `init(daemon)` would CLEAR that status, leaving
+    // a broken session that would later create empty wallet cache files on `closeWallet`.
+    // Detect the failure here and roll back without touching the filesystem.
+    if (bridge->wallet->status() != Monero::Wallet::Status_Ok) {
+      std::string err = bridge->wallet->errorString();
+      bridge->manager->closeWallet(bridge->wallet, false);
+      bridge->wallet = nullptr;
+      throw std::runtime_error(err.empty() ? "openWallet failed (wrong password?)" : err);
+    }
 
-  if (!daemon_s.empty()) {
-    bridge->wallet->init(daemon_s);
-    bridge->wallet->startRefresh();
+    if (!daemon_s.empty()) {
+      try {
+        bridge->wallet->init(daemon_s);
+        // Defer background refresh until the first `refresh` RPC (mobile: lowers peak
+        // RAM during open of large wallet cache files).
+      } catch (...) {
+        if (bridge->manager != nullptr && bridge->wallet != nullptr) {
+          bridge->manager->closeWallet(bridge->wallet, false);
+          bridge->wallet = nullptr;
+        }
+        throw std::runtime_error(wallet2_exception_message("wallet daemon init"));
+      }
+    }
+    return bridge;
+  } catch (const std::bad_alloc&) {
+    throw std::runtime_error(
+        "wallet2_open: not enough memory (wallet cache may be too large for this device)");
+  } catch (...) {
+    throw std::runtime_error(wallet2_exception_message("wallet2_open"));
   }
-  return bridge;
 }
 
 std::unique_ptr<Wallet2Bridge> wallet2_init_bare() {

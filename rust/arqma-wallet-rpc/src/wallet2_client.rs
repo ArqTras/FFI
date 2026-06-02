@@ -95,6 +95,16 @@ impl Wallet2ApiClient {
         }
     }
 
+    /// Avoid `store` / `close_wallet` racing a background rescan or refresh (wallet file corruption risk).
+    fn wait_background_idle(&self, max_wait: Duration) {
+        let deadline = std::time::Instant::now() + max_wait;
+        while self.wallet_background_busy.load(Ordering::Acquire)
+            && std::time::Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(200));
+        }
+    }
+
     pub fn fork_for_heartbeat(&self) -> Self {
         self.clone()
     }
@@ -578,8 +588,23 @@ impl Wallet2ApiClient {
             .inner
             .lock()
             .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
+        if self.wallet_background_busy.load(Ordering::Acquire) {
+            match method {
+                "transfer_split" | "transfer" | "stake" | "sweep_all"
+                | "change_wallet_password" | "register_service_node" => {
+                    return Err(WalletRpcError::Transport(format!(
+                        "wallet2: {method} refused while background operation is running"
+                    )));
+                }
+                _ => {}
+            }
+        }
         match method {
             "open_wallet" => {
+                self.wallet_background_busy.store(false, Ordering::SeqCst);
+                if let Some(mut old) = g.take() {
+                    let _ = old.close();
+                }
                 let filename = _params
                     .get("filename")
                     .or_else(|| _params.get("name"))
@@ -598,13 +623,16 @@ impl Wallet2ApiClient {
                         )
                     })?;
                 let path = resolve_wallet_path(&self.cfg.wallet_dir, filename);
-                let session = Wallet2Session::open(&Wallet2OpenConfig {
+                let mut session = Wallet2Session::open(&Wallet2OpenConfig {
                     wallet_path: path,
                     password: password.to_string(),
                     daemon_address: self.cfg.daemon_address.clone(),
                     network: self.cfg.network.clone(),
                 })
                 .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
+                if let Err(e) = session.refresh_async_start(None) {
+                    eprintln!("[wallet2] open_wallet refresh_async_start: {e}");
+                }
                 *g = Some(session);
                 Ok(json!({ "result": {} }))
             }
@@ -1378,6 +1406,11 @@ impl Wallet2ApiClient {
             })),
             "get_languages" => Ok(json!({ "result": { "languages": ["English"] } })),
             "store" => {
+                if self.wallet_background_busy.load(Ordering::Acquire) {
+                    return Err(WalletRpcError::Transport(
+                        "wallet2: store refused while background operation is running".to_string(),
+                    ));
+                }
                 let s = g.as_mut().ok_or_else(|| {
                     WalletRpcError::Transport("wallet2: no wallet session".to_string())
                 })?;
@@ -1386,6 +1419,14 @@ impl Wallet2ApiClient {
                 Ok(json!({ "result": {} }))
             }
             "close_wallet" | "stop_wallet" => {
+                // Let rescan/refresh finish (or time out) before closing — closing mid-job can corrupt `.keys`.
+                self.wait_background_idle(Duration::from_secs(90));
+                if self.wallet_background_busy.load(Ordering::Acquire) {
+                    eprintln!(
+                        "[wallet2] close_wallet: background job still running after wait — forcing close"
+                    );
+                }
+                self.wallet_background_busy.store(false, Ordering::SeqCst);
                 if let Some(s) = g.as_mut() {
                     s.close()
                         .map_err(|e| WalletRpcError::Transport(e.to_string()))?;
