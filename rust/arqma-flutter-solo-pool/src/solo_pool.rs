@@ -197,9 +197,10 @@ struct JobState {
     blob: String,
     /// Full `blocktemplate_blob` (optional; not sent to miner — used if we later rebuild blocks for `submit_block`).
     template_blob: String,
-    /// Byte offset into decoded `blocktemplate_blob` where the 4-byte Stratum nonce is written (`get_block_template`).
+    /// `reserved_offset` from `get_block_template`: pool extra-nonce area inside the miner tx `tx_extra`
+    /// (informational/validation only — the miner Stratum nonce goes into the block-header nonce field).
     reserved_offset: u64,
-    /// `reserve_size` from `get_block_template` (informational; nonce patch uses 4 bytes at `reserved_offset`).
+    /// `reserve_size` from `get_block_template` (informational).
     reserve_size: u64,
     target: String,
     height: u64,
@@ -563,14 +564,44 @@ fn blocktemplate_blob_ok(blob: &str) -> bool {
     hex::decode(blob).is_ok()
 }
 
-/// Patch the 4-byte Stratum `nonce` (8 hex chars, same byte order as in `blockhashing_blob`) into the full
-/// `blocktemplate_blob` at `reserved_offset`, then re-encode hex for `submit_block`.
+/// Byte offset of the 4-byte block-header `nonce` inside `blocktemplate_blob` (same header prefix as
+/// `blockhashing_blob`): varint(major_version) + varint(minor_version) + varint(timestamp) + 32-byte prev_id.
+/// Currently 39 for mainnet timestamps (5-byte varint), but computed from the varints to stay correct.
+fn block_header_nonce_offset(block_bytes: &[u8]) -> Result<usize, String> {
+    let mut off = 0usize;
+    for field in ["major_version", "minor_version", "timestamp"] {
+        let start = off;
+        loop {
+            let b = *block_bytes
+                .get(off)
+                .ok_or_else(|| format!("template too short while reading varint {field}"))?;
+            off += 1;
+            if b & 0x80 == 0 {
+                break;
+            }
+            if off - start >= 10 {
+                return Err(format!("varint overflow in {field}"));
+            }
+        }
+    }
+    off += 32; // prev_id
+    if off + 4 > block_bytes.len() {
+        return Err(format!(
+            "template too short for header nonce: off={off} len={}",
+            block_bytes.len()
+        ));
+    }
+    Ok(off)
+}
+
+/// Patch the 4-byte Stratum `nonce` (8 hex chars, same byte order as in `blockhashing_blob`) into the
+/// **block-header nonce field** of the full `blocktemplate_blob`, then re-encode hex for `submit_block`.
+/// Equivalent of `construct_block_blob` / `b.nonce = nonce` in ryo-core-js (arqma-electron-wallet) and
+/// MoneroOcean node-blocktemplate. The `reserved_offset` area in `tx_extra` is for a pool extra nonce and
+/// must stay untouched — this pool never writes one, so the daemon `blockhashing_blob` sent to miners
+/// matches the template and only the header nonce differs on submit.
 /// XMRig does not send `blob` on `submit` — this path relays solo-found blocks to `arqmad`.
-fn assemble_block_blob_for_submit(
-    template_hex: &str,
-    reserved_offset: u64,
-    nonce_hex: &str,
-) -> Result<String, String> {
+fn assemble_block_blob_for_submit(template_hex: &str, nonce_hex: &str) -> Result<String, String> {
     if template_hex.is_empty() {
         return Err("empty blocktemplate_blob".into());
     }
@@ -578,17 +609,11 @@ fn assemble_block_blob_for_submit(
         return Err("nonce must be 8 hex chars".into());
     }
     let mut bytes = hex::decode(template_hex).map_err(|_| "blocktemplate_blob hex decode failed".to_string())?;
-    let off = reserved_offset as usize;
     let nonce_bytes = hex::decode(nonce_hex).map_err(|_| "nonce hex decode failed".to_string())?;
     if nonce_bytes.len() != 4 {
         return Err("nonce must decode to 4 bytes".into());
     }
-    if off + 4 > bytes.len() {
-        return Err(format!(
-            "reserved_offset+4 out of range: off={off} len={}",
-            bytes.len()
-        ));
-    }
+    let off = block_header_nonce_offset(&bytes)?;
     bytes[off..off + 4].copy_from_slice(&nonce_bytes);
     Ok(hex::encode(bytes))
 }
@@ -652,6 +677,67 @@ fn passes_compact_target(result_hash: &str, compact_target_le_hex: &str) -> bool
         u32::from_be_bytes(last),
     ];
     samples.into_iter().any(|sample| sample <= target_le)
+}
+
+/// `hash_hex` as little-endian integer; true when `MAX_TARGET / hash >= difficulty`
+/// (same rule as nodejs-pool `hashDiff` + `isBlockCandidate`).
+fn hash_meets_difficulty(hash_hex: &str, difficulty: u64) -> bool {
+    if difficulty == 0 || !is_hex_64(hash_hex) {
+        return false;
+    }
+    let Ok(bytes) = hex::decode(hash_hex) else {
+        return false;
+    };
+    if bytes.len() != 32 || bytes.iter().all(|b| *b == 0) {
+        return false;
+    }
+    le256_mul_u64_leq_max(&bytes, difficulty)
+}
+
+/// True when `hash_le * multiplier <= 2^256 - 1` (`hash_le` is 32-byte little-endian).
+fn le256_mul_u64_leq_max(hash_le: &[u8], multiplier: u64) -> bool {
+    if multiplier == 0 {
+        return true;
+    }
+    let limbs: [u64; 4] = [
+        u64::from_le_bytes(hash_le[0..8].try_into().unwrap_or([0; 8])),
+        u64::from_le_bytes(hash_le[8..16].try_into().unwrap_or([0; 8])),
+        u64::from_le_bytes(hash_le[16..24].try_into().unwrap_or([0; 8])),
+        u64::from_le_bytes(hash_le[24..32].try_into().unwrap_or([0; 8])),
+    ];
+    let product = mul_u64_limbs_by_u64(limbs, multiplier);
+    if product[4] != 0 {
+        return false;
+    }
+    for i in (0..4).rev() {
+        if product[i] < u64::MAX {
+            return true;
+        }
+        if product[i] > u64::MAX {
+            return false;
+        }
+    }
+    true
+}
+
+fn mul_u64_limbs_by_u64(limbs: [u64; 4], multiplier: u64) -> [u64; 5] {
+    let mut out = [0u64; 5];
+    for i in 0..4 {
+        let mut carry: u128 = 0;
+        for j in 0..=i {
+            let prod = limbs[j] as u128 * multiplier as u128 + out[i - j] as u128 + carry;
+            out[i - j] = prod as u64;
+            carry = prod >> 64;
+        }
+        let mut k = i + 1;
+        while carry > 0 && k < 5 {
+            let sum = out[k] as u128 + carry;
+            out[k] = sum as u64;
+            carry = sum >> 64;
+            k += 1;
+        }
+    }
+    out
 }
 
 fn pool_enabled(st: &WalletBackendState) -> bool {
@@ -2010,14 +2096,13 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
                       // If the miner sends `blob` (non-standard), use it when it also meets network target.
                       let maybe_blob_param = params.get("blob").and_then(|v| v.as_str()).unwrap_or("");
                       let hits_network =
-                        current.difficulty > 0 && passes_compact_target(result_hash, &current.target);
+                        current.difficulty > 0 && hash_meets_difficulty(result_hash, current.difficulty);
                       if hits_network {
                         let block_hex: Option<String> = if !maybe_blob_param.is_empty() {
                           Some(maybe_blob_param.to_string())
                         } else if !current.template_blob.is_empty() {
                           match assemble_block_blob_for_submit(
                             &current.template_blob,
-                            current.reserved_offset,
                             nonce,
                           ) {
                             Ok(h) => Some(h),
@@ -2118,5 +2203,73 @@ pub fn stop(st: &mut WalletBackendState) {
     }
     if let Some(h) = st.solo_pool_task.take() {
         h.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn push_varint(mut v: u64, out: &mut Vec<u8>) {
+        loop {
+            let mut b = (v & 0x7f) as u8;
+            v >>= 7;
+            if v != 0 {
+                b |= 0x80;
+            }
+            out.push(b);
+            if v == 0 {
+                break;
+            }
+        }
+    }
+
+    fn synthetic_template(timestamp: u64, body_len: usize) -> (Vec<u8>, usize) {
+        let mut raw = Vec::new();
+        push_varint(16, &mut raw);
+        push_varint(16, &mut raw);
+        push_varint(timestamp, &mut raw);
+        raw.extend_from_slice(&[0xAA; 32]);
+        let nonce_off = raw.len();
+        raw.extend_from_slice(&[0x11, 0x22, 0x33, 0x44]);
+        raw.extend(std::iter::repeat(0xEE).take(body_len));
+        (raw, nonce_off)
+    }
+
+    #[test]
+    fn header_nonce_offset_matches_varint_layout() {
+        let (raw, off) = synthetic_template(1_780_000_000, 60);
+        assert_eq!(off, 39);
+        assert_eq!(block_header_nonce_offset(&raw).expect("offset"), 39);
+        let (raw, off) = synthetic_template(5, 60);
+        assert_eq!(off, 35);
+        assert_eq!(block_header_nonce_offset(&raw).expect("offset"), 35);
+    }
+
+    #[test]
+    fn assemble_block_blob_writes_nonce_into_header_not_reserved_area() {
+        let (raw, nonce_off) = synthetic_template(1_780_000_000, 120);
+        let reserved_offset = 100usize;
+        let template = hex::encode(&raw);
+        let patched = assemble_block_blob_for_submit(&template, "aabbccdd").expect("assemble");
+        let out = hex::decode(&patched).expect("hex");
+        assert_eq!(&out[nonce_off..nonce_off + 4], &[0xaa, 0xbb, 0xcc, 0xdd]);
+        assert_eq!(&out[..nonce_off], &raw[..nonce_off]);
+        assert_eq!(&out[nonce_off + 4..], &raw[nonce_off + 4..]);
+        assert_eq!(
+            &out[reserved_offset..reserved_offset + 4],
+            &raw[reserved_offset..reserved_offset + 4]
+        );
+    }
+
+    #[test]
+    fn assemble_block_blob_rejects_short_template_or_bad_nonce() {
+        let (raw, _) = synthetic_template(1_780_000_000, 0);
+        let truncated = hex::encode(&raw[..36]);
+        assert!(assemble_block_blob_for_submit(&truncated, "aabbccdd").is_err());
+        let (raw, _) = synthetic_template(1_780_000_000, 30);
+        let template = hex::encode(&raw);
+        assert!(assemble_block_blob_for_submit(&template, "aabb").is_err());
+        assert!(assemble_block_blob_for_submit("", "aabbccdd").is_err());
     }
 }

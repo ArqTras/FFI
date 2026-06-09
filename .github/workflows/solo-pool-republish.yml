@@ -1,0 +1,145 @@
+# Rebuild and overwrite solo-pool sidecar zips on an existing FFI release tag (wallet FFI unchanged).
+name: Solo pool republish
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to overwrite solo-pool assets on (e.g. 1.0.15)"
+        required: true
+        default: "1.0.15"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: solo-pool-republish-${{ github.repository }}-${{ inputs.tag }}
+  cancel-in-progress: true
+
+jobs:
+  solo-pool-linux:
+    name: Solo pool Linux x86_64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: solo-pool-republish-linux-${{ inputs.tag }}
+      - name: Normalize shell scripts (LF)
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
+      - name: cargo build solo pool
+        working-directory: rust
+        run: cargo build -p arqma-flutter-solo-pool --release --bin arqma_flutter_solo_pool
+      - run: bash build/ci/package-solo-pool-artifact.sh linux-x86_64 "${{ inputs.tag }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solo-pool-linux-x86_64
+          path: dist/arqma-wallet-solo-pool-linux-x86_64-*.zip
+
+  solo-pool-macos:
+    name: Solo pool macOS arm64
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: solo-pool-republish-macos-${{ inputs.tag }}
+      - name: Normalize shell scripts (LF)
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i '' 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
+      - name: cargo build solo pool
+        working-directory: rust
+        run: cargo build -p arqma-flutter-solo-pool --release --bin arqma_flutter_solo_pool
+      - run: bash build/ci/package-solo-pool-artifact.sh macos-arm64 "${{ inputs.tag }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solo-pool-macos-arm64
+          path: dist/arqma-wallet-solo-pool-macos-arm64-*.zip
+
+  solo-pool-windows:
+    name: Solo pool Windows x86_64 GNU
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        shell: bash
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - run: rustup target add x86_64-pc-windows-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: solo-pool-republish-windows-${{ inputs.tag }}
+      - id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc zip
+      - name: Normalize shell scripts (LF)
+        shell: bash
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
+      - name: cargo build solo pool
+        working-directory: rust
+        shell: pwsh
+        env:
+          CARGO_PROFILE_RELEASE_LTO: thin
+        run: |
+          $root = "${{ steps.msys2.outputs.msys2-location }}"
+          if ([string]::IsNullOrWhiteSpace($root)) { $root = "C:\msys64" }
+          $env:Path = "$root\mingw64\bin;$root\usr\bin;" + $env:Path
+          cargo build -p arqma-flutter-solo-pool --release --bin arqma_flutter_solo_pool --target x86_64-pc-windows-gnu
+      - name: Package solo pool artifact
+        shell: msys2 {0}
+        run: |
+          bash "$(cygpath -u "$GITHUB_WORKSPACE")/build/ci/package-solo-pool-artifact.sh" windows-x86_64-gnu "${{ inputs.tag }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solo-pool-windows-x86_64-gnu
+          path: dist/arqma-wallet-solo-pool-windows-x86_64-gnu-*.zip
+
+  upload-solo-pool:
+    name: Overwrite solo-pool release assets
+    needs: [solo-pool-linux, solo-pool-macos, solo-pool-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: List solo-pool zips
+        run: find artifacts -type f -name 'arqma-wallet-solo-pool-*.zip' | sort
+      - name: Upload (clobber existing assets on tag)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${{ inputs.tag }}"
+          mapfile -t ZIPS < <(find artifacts -type f -name 'arqma-wallet-solo-pool-*.zip' | sort)
+          if [ "${#ZIPS[@]}" -eq 0 ]; then
+            echo "No solo-pool zips found" >&2
+            exit 1
+          fi
+          gh release upload "${TAG}" --repo "${GITHUB_REPOSITORY}" --clobber "${ZIPS[@]}"
