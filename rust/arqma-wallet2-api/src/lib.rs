@@ -306,6 +306,10 @@ impl Wallet2Session {
         self.inner.scan_heights()
     }
 
+    pub fn pause_refresh(&mut self) -> Wallet2Result<()> {
+        self.inner.pause_refresh()
+    }
+
     pub fn import_key_images(&self, filename: &str) -> Wallet2Result<bool> {
         self.inner.import_key_images(filename)
     }

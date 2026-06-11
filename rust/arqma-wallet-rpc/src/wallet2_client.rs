@@ -74,6 +74,7 @@ pub struct Wallet2ApiClient {
     inner: Arc<Mutex<Option<Wallet2Session>>>,
     /// Last successful `getheight` (UI/footer); used when the session mutex is held by background work.
     height_stale_cache: Arc<AtomicU64>,
+    daemon_height_stale_cache: Arc<AtomicU64>,
     /// Last successful `getbalance` (atomic units); same rationale as height during `rescan_*` / long refresh.
     balance_stale_cache: Arc<AtomicU64>,
     unlocked_stale_cache: Arc<AtomicU64>,
@@ -88,6 +89,7 @@ impl Wallet2ApiClient {
             cfg: Arc::new(cfg),
             inner: Arc::new(Mutex::new(None)),
             height_stale_cache: Arc::new(AtomicU64::new(0)),
+            daemon_height_stale_cache: Arc::new(AtomicU64::new(0)),
             balance_stale_cache: Arc::new(AtomicU64::new(0)),
             unlocked_stale_cache: Arc::new(AtomicU64::new(0)),
             address_stale_cache: Arc::new(Mutex::new(String::new())),
@@ -113,8 +115,36 @@ impl Wallet2ApiClient {
         self.clone()
     }
 
+    fn getheight_stale_json(&self, background_busy: bool) -> Result<Value, WalletRpcError> {
+        let h = self.height_stale_cache.load(Ordering::Acquire);
+        let dh = self.daemon_height_stale_cache.load(Ordering::Acquire);
+        let mut result = serde_json::Map::new();
+        result.insert("height".to_string(), json!(h));
+        if dh > 0 {
+            result.insert("daemon_height".to_string(), json!(dh));
+        }
+        if background_busy {
+            result.insert("background_busy".to_string(), json!(true));
+        }
+        Ok(json!({ "result": Value::Object(result) }))
+    }
+
+    fn pause_background_refresh(inner: &Arc<Mutex<Option<Wallet2Session>>>) {
+        if let Ok(mut g) = inner.lock() {
+            if let Some(s) = g.as_mut() {
+                if let Err(e) = s.pause_refresh() {
+                    eprintln!("[wallet2] pause_refresh after background job: {e}");
+                }
+            }
+        }
+    }
+
+    /// While `refreshAsync` / rescan runs, only the background height poller may touch wallet2.
     fn getheight_nonblocking_or_stale(&self) -> Result<Value, WalletRpcError> {
         let busy = self.wallet_background_busy.load(Ordering::Acquire);
+        if busy {
+            return self.getheight_stale_json(true);
+        }
         if let Ok(guard) = self.inner.try_lock() {
             if let Some(s) = guard.as_ref() {
                 if let Ok((wallet_h, daemon_h)) = s.scan_heights() {
@@ -122,15 +152,9 @@ impl Wallet2ApiClient {
                         self.height_stale_cache
                             .store(wallet_h, Ordering::Release);
                     }
-                    // Keep balance caches warm during background refresh so heartbeat `getbalance`
-                    // does not return zeros while the session mutex is mostly held by the scanner.
-                    if busy {
-                        if let Ok(b) = s.balance() {
-                            self.balance_stale_cache
-                                .store(b.balance, Ordering::Release);
-                            self.unlocked_stale_cache
-                                .store(b.unlocked_balance, Ordering::Release);
-                        }
+                    if daemon_h > 0 {
+                        self.daemon_height_stale_cache
+                            .store(daemon_h, Ordering::Release);
                     }
                     let h = if wallet_h > 0 {
                         wallet_h
@@ -142,23 +166,39 @@ impl Wallet2ApiClient {
                     if daemon_h > 0 {
                         result.insert("daemon_height".to_string(), json!(daemon_h));
                     }
-                    if busy {
-                        result.insert("background_busy".to_string(), json!(true));
-                    }
                     return Ok(json!({ "result": Value::Object(result) }));
                 }
             }
         }
-        let h = self.height_stale_cache.load(Ordering::Acquire);
-        let mut result = serde_json::Map::new();
-        result.insert("height".to_string(), json!(h));
-        if busy {
-            result.insert("background_busy".to_string(), json!(true));
-        }
-        Ok(json!({ "result": Value::Object(result) }))
+        self.getheight_stale_json(false)
     }
 
     fn getbalance_nonblocking_or_stale(&self) -> Result<Value, WalletRpcError> {
+        if self.wallet_background_busy.load(Ordering::Acquire) {
+            let balance = self.balance_stale_cache.load(Ordering::Acquire);
+            let unlocked = self.unlocked_stale_cache.load(Ordering::Acquire);
+            let addr = match self.address_stale_cache.lock() {
+                Ok(g) => g.clone(),
+                Err(e) => e.into_inner().clone(),
+            };
+            let num_unspent_outputs = if unlocked > 0 { 1u64 } else { 0u64 };
+            return Ok(json!({
+                "result": {
+                    "balance": balance,
+                    "unlocked_balance": unlocked,
+                    "multisig_import_needed": false,
+                    "per_subaddress": [{
+                        "account_index": 0u64,
+                        "address_index": 0u64,
+                        "address": addr,
+                        "balance": balance,
+                        "unlocked_balance": unlocked,
+                        "num_unspent_outputs": num_unspent_outputs,
+                        "blocks_to_unlock": 0u64
+                    }]
+                }
+            }));
+        }
         match self.inner.try_lock() {
             Ok(guard) => {
                 let s = guard.as_ref().ok_or_else(|| {
@@ -227,6 +267,23 @@ impl Wallet2ApiClient {
     }
 
     fn get_address_nonblocking_or_stale(&self) -> Result<Value, WalletRpcError> {
+        if self.wallet_background_busy.load(Ordering::Acquire) {
+            let addr = match self.address_stale_cache.lock() {
+                Ok(g) => g.clone(),
+                Err(e) => e.into_inner().clone(),
+            };
+            return Ok(json!({
+                "result": {
+                    "address": addr.clone(),
+                    "addresses": [{
+                        "address": addr,
+                        "label": "",
+                        "address_index": 0u32,
+                        "used": true
+                    }]
+                }
+            }));
+        }
         match self.inner.try_lock() {
             Ok(guard) => {
                 let s = guard.as_ref().ok_or_else(|| {
@@ -394,6 +451,7 @@ impl Wallet2ApiClient {
         let inner = self.inner.clone();
         let busy = self.wallet_background_busy.clone();
         let height_cache = self.height_stale_cache.clone();
+        let daemon_height_cache = self.daemon_height_stale_cache.clone();
         let balance_cache = self.balance_stale_cache.clone();
         let unlocked_cache = self.unlocked_stale_cache.clone();
         thread::spawn(move || {
@@ -419,6 +477,7 @@ impl Wallet2ApiClient {
             })();
             if let Err(e) = started {
                 eprintln!("[wallet2] refresh_async_start: {e}");
+                Self::pause_background_refresh(&inner);
                 return;
             }
 
@@ -430,7 +489,7 @@ impl Wallet2ApiClient {
 
             loop {
                 thread::sleep(POLL);
-                let (wallet_h, daemon_h) = match inner.try_lock() {
+                let (wallet_h, daemon_h) = match inner.lock() {
                     Ok(guard) => match guard.as_ref() {
                         Some(s) => {
                             if let Ok(b) = s.balance() {
@@ -447,6 +506,9 @@ impl Wallet2ApiClient {
                 if wallet_h > 0 {
                     height_cache.store(wallet_h, Ordering::Release);
                 }
+                if daemon_h > 0 {
+                    daemon_height_cache.store(daemon_h, Ordering::Release);
+                }
                 if daemon_h > 0 && wallet_h + TIP_BAND >= daemon_h {
                     break;
                 }
@@ -460,6 +522,7 @@ impl Wallet2ApiClient {
                     last_h = wallet_h;
                 }
             }
+            Self::pause_background_refresh(&inner);
         });
 
         Ok(json!({
@@ -481,6 +544,7 @@ impl Wallet2ApiClient {
         let inner = self.inner.clone();
         let busy = self.wallet_background_busy.clone();
         let height_cache = self.height_stale_cache.clone();
+        let daemon_height_cache = self.daemon_height_stale_cache.clone();
         let balance_cache = self.balance_stale_cache.clone();
         let unlocked_cache = self.unlocked_stale_cache.clone();
         let pre_tip = height_cache.load(Ordering::Acquire);
@@ -509,6 +573,7 @@ impl Wallet2ApiClient {
             })();
             if let Err(e) = started {
                 eprintln!("[wallet2] background rescan_blockchain_async start: {e}");
+                Self::pause_background_refresh(&inner);
                 return;
             }
 
@@ -522,7 +587,7 @@ impl Wallet2ApiClient {
 
             loop {
                 thread::sleep(POLL);
-                let (wallet_h, daemon_h) = match inner.try_lock() {
+                let (wallet_h, daemon_h) = match inner.lock() {
                     Ok(guard) => match guard.as_ref() {
                         Some(s) => {
                             if let Ok(b) = s.balance() {
@@ -538,6 +603,9 @@ impl Wallet2ApiClient {
                 };
                 if wallet_h > 0 {
                     height_cache.store(wallet_h, Ordering::Release);
+                }
+                if daemon_h > 0 {
+                    daemon_height_cache.store(daemon_h, Ordering::Release);
                 }
                 if pre_tip > 0 && wallet_h + REWIND_BAND < pre_tip {
                     saw_rewind = true;
@@ -564,6 +632,7 @@ impl Wallet2ApiClient {
                     last_h = wallet_h;
                 }
             }
+            Self::pause_background_refresh(&inner);
         });
 
         Ok(json!({

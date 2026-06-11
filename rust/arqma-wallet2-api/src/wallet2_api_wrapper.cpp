@@ -686,6 +686,13 @@ void wallet2_read_scan_heights(
   daemon_height = bridge.wallet->daemonBlockChainHeight();
 }
 
+void wallet2_pause_refresh(Wallet2Bridge& bridge) {
+  if (bridge.wallet == nullptr) {
+    return;
+  }
+  bridge.wallet->pauseRefresh();
+}
+
 bool wallet2_import_key_images(const Wallet2Bridge& bridge, const std::string& filename) {
   if (bridge.wallet == nullptr) {
     throw std::runtime_error("wallet is null");

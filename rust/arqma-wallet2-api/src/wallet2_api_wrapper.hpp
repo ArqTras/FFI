@@ -97,6 +97,8 @@ void wallet2_read_scan_heights(
   std::uint64_t& wallet_height,
   std::uint64_t& daemon_height
 );
+/// Stop wallet2 background refresh thread before other wallet2 calls (Flutter FFI scan completion).
+void wallet2_pause_refresh(Wallet2Bridge& bridge);
 bool wallet2_import_key_images(const Wallet2Bridge& bridge, const std::string& filename);
 rust::String wallet2_stake_prepare_json(
   Wallet2Bridge& bridge,
