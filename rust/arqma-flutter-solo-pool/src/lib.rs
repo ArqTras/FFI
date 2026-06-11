@@ -60,7 +60,19 @@ pub async fn run_flutter_solo_pool_async() -> Result<(), String> {
     if st.solo_pool_task.is_none() {
         return Ok(());
     }
-    tokio::signal::ctrl_c().await.map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm = signal(SignalKind::terminate()).map_err(|e| e.to_string())?;
+        tokio::select! {
+            res = tokio::signal::ctrl_c() => res.map_err(|e| e.to_string())?,
+            _ = sigterm.recv() => {},
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await.map_err(|e| e.to_string())?;
+    }
     solo_pool::stop(&mut st);
     Ok(())
 }

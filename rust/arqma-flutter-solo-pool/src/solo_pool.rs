@@ -208,6 +208,8 @@ struct JobState {
     seed_hash: String,
     next_seed_hash: String,
     created_ms: i64,
+    /// From `get_block_template` (`expected_reward` when present), else -1 until resolved.
+    expected_reward: i64,
 }
 
 #[derive(Clone, Default)]
@@ -510,6 +512,51 @@ fn json_u64(v: &Value) -> Option<u64> {
         }
     }
     v.as_str().and_then(|s| s.trim().parse::<u64>().ok())
+}
+
+/// Block reward from daemon `get_block_template` result (atomic units).
+fn template_expected_reward(r: &Value) -> i64 {
+    for key in ["expected_reward", "block_reward", "reward"] {
+        if let Some(n) = r.get(key).and_then(json_u64) {
+            return (n.min(i64::MAX as u64)) as i64;
+        }
+    }
+    -1
+}
+
+/// Sum coinbase outputs from `get_block` (fallback when template had no expected_reward).
+fn reward_from_get_block_value(v: &Value) -> Option<i64> {
+    if let Some(n) = v.pointer("/result/reward").and_then(json_u64) {
+        return Some((n.min(i64::MAX as u64)) as i64);
+    }
+    if let Some(n) = v.pointer("/result/block_reward").and_then(json_u64) {
+        return Some((n.min(i64::MAX as u64)) as i64);
+    }
+    let vouts = v.pointer("/result/block/miner_tx/vout")?.as_array()?;
+    let mut sum: u64 = 0;
+    for o in vouts {
+        let amt = o.get("amount").and_then(json_u64).unwrap_or(0);
+        sum = sum.saturating_add(amt);
+    }
+    (sum > 0).then_some((sum.min(i64::MAX as u64)) as i64)
+}
+
+async fn fetch_block_reward_from_daemon(
+    http: &reqwest::Client,
+    daemon: &(String, u16),
+    height: u64,
+) -> i64 {
+    if height == 0 {
+        return -1;
+    }
+    let params = json!({ "height": height });
+    let Ok(v) = daemon_post(http, &daemon.0, daemon.1, "get_block", 0, &params).await else {
+        return -1;
+    };
+    if v.get("error").is_some() {
+        return -1;
+    }
+    reward_from_get_block_value(&v).unwrap_or(-1)
 }
 
 /// XMRig can reject jobs when `next_seed_hash` is an empty string around seed-epoch edges
@@ -1175,6 +1222,7 @@ async fn refresh_job(
     j.seed_hash = seed_hash;
     j.next_seed_hash = next_seed_hash;
     j.created_ms = now_ms();
+    j.expected_reward = template_expected_reward(r);
     let mut ring = job_ring.lock().await;
     ring.push(j.clone());
     if ring.len() > 8 {
@@ -1229,7 +1277,7 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
         .and_then(|p| p.get("varDiff"))
         .and_then(|v| v.get("startDiff"))
         .and_then(|v| v.as_u64())
-        .unwrap_or(50_000)
+        .unwrap_or(60_000)
         .clamp(1000, 100_000_000);
     let var_retarget_time_s = st
         .config_data
@@ -1237,7 +1285,7 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
         .and_then(|p| p.get("varDiff"))
         .and_then(|v| v.get("retargetTime"))
         .and_then(|v| v.as_u64())
-        .unwrap_or(45);
+        .unwrap_or(30);
     let var_target_time_s = st
         .config_data
         .get("pool")
@@ -1251,7 +1299,7 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
         .and_then(|p| p.get("varDiff"))
         .and_then(|v| v.get("variancePercent"))
         .and_then(|v| v.as_u64())
-        .unwrap_or(30);
+        .unwrap_or(25);
     let var_min_diff = st
         .config_data
         .get("pool")
@@ -1265,14 +1313,14 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
         .and_then(|p| p.get("varDiff"))
         .and_then(|v| v.get("maxDiff"))
         .and_then(|v| v.as_u64())
-        .unwrap_or(10_000_000);
+        .unwrap_or(5_000_000);
     let var_max_jump_percent = st
         .config_data
         .get("pool")
         .and_then(|p| p.get("varDiff"))
         .and_then(|v| v.get("maxJump"))
         .and_then(|v| v.as_u64())
-        .unwrap_or(150);
+        .unwrap_or(50);
     let miner_timeout_ms = st
         .config_data
         .get("pool")
@@ -1282,6 +1330,21 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
         .unwrap_or(900)
         .saturating_mul(1000)
         .max(60_000) as i64;
+    let block_refresh_enabled = st
+        .config_data
+        .get("pool")
+        .and_then(|p| p.get("mining"))
+        .and_then(|m| m.get("enableBlockRefreshInterval"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let block_refresh_secs = st
+        .config_data
+        .get("pool")
+        .and_then(|p| p.get("mining"))
+        .and_then(|m| m.get("blockRefreshInterval"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(5)
+        .clamp(1, 120);
     let (tx, mut rx) = oneshot::channel::<()>();
     st.solo_pool_shutdown = Some(tx);
     let sink = sink.clone();
@@ -1377,6 +1440,7 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
         let last_disconnected: Arc<Mutex<HashMap<String, WorkerState>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let mut prev_job_id = String::new();
+        let mut last_template_height: u64 = 0;
         refresh_job(
             &http,
             &daemon,
@@ -1387,7 +1451,16 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
             PUBLIC_POOL_TEMPLATE_RESERVE_SIZE,
         )
         .await;
-        let mut beat = interval(Duration::from_secs(5));
+        {
+            let j = current_job.lock().await;
+            last_template_height = j.height;
+        }
+        let beat_secs = if block_refresh_enabled {
+            block_refresh_secs
+        } else {
+            30
+        };
+        let mut beat = interval(Duration::from_secs(beat_secs));
         beat.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut persist_tick = interval(Duration::from_secs(30));
         persist_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -1429,16 +1502,34 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
                 save_persisted(&config_dir, &PersistData { workers: workers_snapshot, blocks: blocks_snapshot });
               }
               _ = beat.tick() => {
-                refresh_job(
-                  &http,
-                  &daemon,
-                  &mining_address,
-                  &current_job,
-                  &job_ring,
-                  job_seq.as_ref(),
-                  PUBLIC_POOL_TEMPLATE_RESERVE_SIZE,
-                )
-                .await;
+                let mut network_height_for_refresh: u64 = 0;
+                if !block_refresh_enabled {
+                  if let Ok(info) = daemon_post(&http, &daemon.0, daemon.1, "get_info", 0, &Value::Null).await {
+                    network_height_for_refresh = info
+                      .get("result")
+                      .and_then(|r| r.get("height"))
+                      .and_then(json_u64)
+                      .unwrap_or(0);
+                  }
+                }
+                let should_refresh_template = block_refresh_enabled
+                  || network_height_for_refresh > last_template_height;
+                if should_refresh_template {
+                  refresh_job(
+                    &http,
+                    &daemon,
+                    &mining_address,
+                    &current_job,
+                    &job_ring,
+                    job_seq.as_ref(),
+                    PUBLIC_POOL_TEMPLATE_RESERVE_SIZE,
+                  )
+                  .await;
+                  let j = current_job.lock().await;
+                  if j.height > last_template_height {
+                    last_template_height = j.height;
+                  }
+                }
                 let now = now_ms();
                 let current = current_job.lock().await.clone();
                 let job_changed = current.id != prev_job_id;
@@ -1664,6 +1755,7 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
                 let round_hashes2 = round_hashes.clone();
                 let last_disconnected2 = last_disconnected.clone();
                 let config_dir_dump = config_dir.clone();
+                let sink2 = sink.clone();
                 tokio::spawn(async move {
                   solo_pool_log(&format!("stratum: accepted connection from {peer_l}"));
                   let (reader_half, mut writer_half) = socket.into_split();
@@ -2122,7 +2214,7 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
                           None
                         };
                         if let Some(hx) = block_hex {
-                          if let Ok(sb) = daemon_post(
+                          match daemon_post(
                             &http2,
                             &daemon2.0,
                             daemon2.1,
@@ -2132,13 +2224,22 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
                           )
                           .await
                           {
-                            if sb.get("error").is_none() {
+                            Ok(sb) if sb.get("error").is_none() => {
                               let worker_name = {
                                 let w = workers2.lock().await;
                                 w.get(&my_session_id)
                                   .map(|ws| ws.miner.clone())
                                   .unwrap_or_else(|| "worker".to_string())
                               };
+                              let mut reward = current.expected_reward;
+                              if reward < 0 {
+                                reward = fetch_block_reward_from_daemon(
+                                  &http2,
+                                  &daemon2,
+                                  current.height,
+                                )
+                                .await;
+                              }
                               let total_round = round_hashes2.swap(0, Ordering::Relaxed);
                               let mut bl = blocks2.lock().await;
                               bl.push(json!({
@@ -2147,7 +2248,7 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
                                 "height": current.height,
                                 "timeFound": now_ms(),
                                 "miner": worker_name,
-                                "reward": -1,
+                                "reward": reward,
                                 "diff": current.difficulty,
                                 "hashes": total_round
                               }));
@@ -2156,15 +2257,64 @@ pub fn start<S: SoloPoolSink + Clone + Send + 'static>(sink: S, st: &mut WalletB
                                 bl.drain(0..keep_from);
                               }
                               solo_pool_log(&format!(
-                                "submit_block: accepted height={} miner={worker_name}",
+                                "submit_block: accepted height={} miner={worker_name} reward={reward}",
                                 current.height
                               ));
-                            } else {
+                              sink2.emit_receive(
+                                "solo_pool_block_found",
+                                json!({
+                                  "height": current.height,
+                                  "hash": result_hash,
+                                  "reward": reward,
+                                  "miner": worker_name,
+                                }),
+                              );
+                              sink2.emit_receive(
+                                "show_notification",
+                                json!({
+                                  "type": "positive",
+                                  "message": format!(
+                                    "Solo pool: block accepted at height {} (reward {} atomic units)",
+                                    current.height, reward
+                                  ),
+                                  "timeout": 8000
+                                }),
+                              );
+                            }
+                            Ok(sb) => {
                               solo_pool_log(&format!(
                                 "submit_block: daemon RPC error height={} err={}",
                                 current.height,
                                 sb.get("error").unwrap_or(&Value::Null)
                               ));
+                              sink2.emit_receive(
+                                "show_notification",
+                                json!({
+                                  "type": "warning",
+                                  "message": format!(
+                                    "Solo pool: daemon rejected block at height {}",
+                                    current.height
+                                  ),
+                                  "timeout": 8000
+                                }),
+                              );
+                            }
+                            Err(e) => {
+                              solo_pool_log(&format!(
+                                "submit_block: HTTP/RPC failed height={} err={e}",
+                                current.height
+                              ));
+                              sink2.emit_receive(
+                                "show_notification",
+                                json!({
+                                  "type": "warning",
+                                  "message": format!(
+                                    "Solo pool: could not submit block at height {} ({e})",
+                                    current.height
+                                  ),
+                                  "timeout": 8000
+                                }),
+                              );
                             }
                           }
                         }
@@ -2224,23 +2374,26 @@ mod tests {
         }
     }
 
+    /// Header: varint(major) + varint(minor) + varint(timestamp) + prev_id(32) + nonce(4), then body.
     fn synthetic_template(timestamp: u64, body_len: usize) -> (Vec<u8>, usize) {
         let mut raw = Vec::new();
-        push_varint(16, &mut raw);
-        push_varint(16, &mut raw);
+        push_varint(16, &mut raw); // major_version
+        push_varint(16, &mut raw); // minor_version
         push_varint(timestamp, &mut raw);
-        raw.extend_from_slice(&[0xAA; 32]);
+        raw.extend_from_slice(&[0xAA; 32]); // prev_id
         let nonce_off = raw.len();
-        raw.extend_from_slice(&[0x11, 0x22, 0x33, 0x44]);
-        raw.extend(std::iter::repeat(0xEE).take(body_len));
+        raw.extend_from_slice(&[0x11, 0x22, 0x33, 0x44]); // template nonce
+        raw.extend(std::iter::repeat(0xEE).take(body_len)); // miner tx & co.
         (raw, nonce_off)
     }
 
     #[test]
     fn header_nonce_offset_matches_varint_layout() {
+        // Mainnet-era timestamp -> 5-byte varint -> classic offset 39.
         let (raw, off) = synthetic_template(1_780_000_000, 60);
         assert_eq!(off, 39);
         assert_eq!(block_header_nonce_offset(&raw).expect("offset"), 39);
+        // Tiny timestamp -> 1-byte varint -> offset 35.
         let (raw, off) = synthetic_template(5, 60);
         assert_eq!(off, 35);
         assert_eq!(block_header_nonce_offset(&raw).expect("offset"), 35);
@@ -2249,21 +2402,19 @@ mod tests {
     #[test]
     fn assemble_block_blob_writes_nonce_into_header_not_reserved_area() {
         let (raw, nonce_off) = synthetic_template(1_780_000_000, 120);
-        let reserved_offset = 100usize;
+        let reserved_offset = 100usize; // typical tx_extra reserve position, must stay untouched
         let template = hex::encode(&raw);
         let patched = assemble_block_blob_for_submit(&template, "aabbccdd").expect("assemble");
         let out = hex::decode(&patched).expect("hex");
         assert_eq!(&out[nonce_off..nonce_off + 4], &[0xaa, 0xbb, 0xcc, 0xdd]);
         assert_eq!(&out[..nonce_off], &raw[..nonce_off]);
         assert_eq!(&out[nonce_off + 4..], &raw[nonce_off + 4..]);
-        assert_eq!(
-            &out[reserved_offset..reserved_offset + 4],
-            &raw[reserved_offset..reserved_offset + 4]
-        );
+        assert_eq!(&out[reserved_offset..reserved_offset + 4], &raw[reserved_offset..reserved_offset + 4]);
     }
 
     #[test]
     fn assemble_block_blob_rejects_short_template_or_bad_nonce() {
+        // Too short to contain header nonce (varints + prev_id need >= 39 bytes here).
         let (raw, _) = synthetic_template(1_780_000_000, 0);
         let truncated = hex::encode(&raw[..36]);
         assert!(assemble_block_blob_for_submit(&truncated, "aabbccdd").is_err());
@@ -2271,5 +2422,30 @@ mod tests {
         let template = hex::encode(&raw);
         assert!(assemble_block_blob_for_submit(&template, "aabb").is_err());
         assert!(assemble_block_blob_for_submit("", "aabbccdd").is_err());
+    }
+
+    #[test]
+    fn template_expected_reward_reads_daemon_fields() {
+        let r = json!({ "expected_reward": 1_234_567_890u64 });
+        assert_eq!(template_expected_reward(&r), 1_234_567_890);
+        let r2 = json!({ "block_reward": "999" });
+        assert_eq!(template_expected_reward(&r2), 999);
+    }
+
+    #[test]
+    fn reward_from_get_block_sums_miner_vout() {
+        let v = json!({
+          "result": {
+            "block": {
+              "miner_tx": {
+                "vout": [
+                  { "amount": 100 },
+                  { "amount": 50 }
+                ]
+              }
+            }
+          }
+        });
+        assert_eq!(reward_from_get_block_value(&v), Some(150));
     }
 }

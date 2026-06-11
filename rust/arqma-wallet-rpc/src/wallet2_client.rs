@@ -482,7 +482,7 @@ impl Wallet2ApiClient {
             }
 
             const POLL: Duration = Duration::from_secs(1);
-            const TIP_BAND: u64 = 16;
+            const TIP_BAND: u64 = 1;
             const FLAT_TICKS_DONE: u64 = 30;
             let mut last_h: u64 = 0;
             let mut flat_ticks: u64 = 0;
@@ -578,7 +578,7 @@ impl Wallet2ApiClient {
             }
 
             const POLL: Duration = Duration::from_secs(1);
-            const TIP_BAND: u64 = 16;
+            const TIP_BAND: u64 = 1;
             const REWIND_BAND: u64 = 32;
             const FLAT_TICKS_DONE: u64 = 30; // ~60 s without height change near tip
             let mut last_h: u64 = 0;
