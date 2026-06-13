@@ -9,6 +9,7 @@
 - **Solo pool sidecar (republish 2026-06-12):** Block reward from template/`get_block`; `solo_pool_block_found` + notifications on submit; **SIGTERM** graceful shutdown (Linux app exit); includes header-nonce submit fix and full 256-bit block candidate check.
 - **Includes 1.0.14:** macOS/desktop open stability (8 MiB pthread stack), FFI call serialization, deferred sync on open.
 - **Republish (2026-06-11):** Windows-gnu links **`liblmdb.a` only** (C `mdb_*` symbols; avoids duplicate LMDB static init / Win32 1114). **Scan completion:** background `refresh` / `rescan_*` uses exclusive session lock; `getheight` / `getbalance` / `get_address` return stale cache while busy; `pauseRefresh()` after background jobs — fixes ACCESS_VIOLATION crash near end of blockchain scan.
+- **Android republish (2026-06-13):** link **`__clear_cache`** stub for static-hybrid Android FFI (`dlopen` fix for `libarqma_wallet_flutter_ffi.so`). **Only** `arqma-wallet-ffi-android-*-1.0.15.zip` assets replaced; iOS, Linux, macOS, Windows, and solo-pool zips unchanged.
 
 ## Flutter pairing
 

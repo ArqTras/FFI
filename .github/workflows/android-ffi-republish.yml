@@ -1,0 +1,198 @@
+# Rebuild and overwrite Android wallet FFI zips on an existing release tag (other platforms unchanged).
+name: Android FFI republish
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to overwrite Android FFI assets on (e.g. 1.0.15)"
+        required: true
+        default: "1.0.15"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-ffi-republish-${{ github.repository }}-${{ inputs.tag }}
+  cancel-in-progress: true
+
+env:
+  ARQMA_WALLET2_UPSTREAM_DIR: ${{ github.workspace }}/rust/arqma-rpc-upstream
+  ARQMA_UPSTREAM_REPO: https://github.com/arqtras/arqma.git
+  ARQMA_UPSTREAM_REF: pospow
+  ARQMA_WALLET_FFI_USE_DEPENDS: "1"
+  ARQMA_WALLET_FFI_STATIC_HYBRID: "1"
+
+jobs:
+  ffi-android-arm64:
+    name: Android arm64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      BUILD_ANDROID_ARM64: "1"
+      BUILD_ANDROID_X86_64: "0"
+      ARQMA_ANDROID_DEPENDS_HOST: aarch64-linux-android
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - run: rustup target add aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: android-ffi-republish-arm64-${{ inputs.tag }}-v1
+      - name: Linux + Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl cmake ninja-build pkg-config clang \
+            python3 python3-pip unzip zip git libssl-dev libboost-all-dev libtool
+      - name: Install Android NDK r28c
+        run: |
+          set -eu
+          curl -fsSL -o ndk.zip https://dl.google.com/android/repository/android-ndk-r28c-linux.zip
+          unzip -q ndk.zip
+          echo "ANDROID_NDK_HOME=${GITHUB_WORKSPACE}/android-ndk-r28c" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=${GITHUB_WORKSPACE}/android-ndk-r28c" >> "$GITHUB_ENV"
+          echo "ARQMA_USE_SDK_ANDROID_NDK=1" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Normalize shell scripts (LF)
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
+      - run: bash build/ci/clone-arqma.sh
+      - uses: actions/cache@v4
+        with:
+          path: rust/arqma-rpc-upstream/contrib/depends
+          key: ffi-android-aarch64-depends-v6-${{ hashFiles('build/ci/fold-wallet-merged-archive.sh', 'build/ci/patches/zeromq-ios-host-os.patch') }}
+          restore-keys: ffi-android-aarch64-depends-
+      - name: Build Android FFI (arm64)
+        run: |
+          export PATH="${HOME}/.cargo/bin:${PATH}"
+          export ARQMA_SKIP_DEPENDS_CRLF=1
+          bash rust/tool/build_mobile_wallet_ffi_android.sh
+      - run: bash build/ci/package-ffi-artifact.sh android-arm64 "${{ inputs.tag }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffi-android-arm64
+          path: dist/arqma-wallet-ffi-android-arm64-*.zip
+
+  ffi-android-x86_64:
+    name: Android x86_64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      BUILD_ANDROID_ARM64: "0"
+      BUILD_ANDROID_X86_64: "1"
+      ARQMA_ANDROID_DEPENDS_HOST: x86_64-linux-android
+    steps:
+      - uses: actions/checkout@v5
+      - id: pinned
+        run: bash build/ci/gh-read-pin-versions.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pinned.outputs.rust_toolchain }}
+      - run: rustup target add x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: android-ffi-republish-x86_64-${{ inputs.tag }}-v1
+      - name: Linux + Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl cmake ninja-build pkg-config clang \
+            python3 python3-pip unzip zip git libssl-dev libboost-all-dev libtool
+      - name: Install Android NDK r28c
+        run: |
+          set -eu
+          curl -fsSL -o ndk.zip https://dl.google.com/android/repository/android-ndk-r28c-linux.zip
+          unzip -q ndk.zip
+          echo "ANDROID_NDK_HOME=${GITHUB_WORKSPACE}/android-ndk-r28c" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=${GITHUB_WORKSPACE}/android-ndk-r28c" >> "$GITHUB_ENV"
+          echo "ARQMA_USE_SDK_ANDROID_NDK=1" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Normalize shell scripts (LF)
+        run: |
+          find build/ci rust/tool -name '*.sh' -print0 | xargs -0 sed -i 's/\r$//'
+          chmod +x build/ci/*.sh rust/tool/*.sh
+      - run: bash build/ci/clone-arqma.sh
+      - uses: actions/cache@v4
+        with:
+          path: rust/arqma-rpc-upstream/contrib/depends
+          key: ffi-android-x86_64-depends-v6-${{ hashFiles('build/ci/fold-wallet-merged-archive.sh', 'build/ci/patches/zeromq-ios-host-os.patch') }}
+          restore-keys: ffi-android-x86_64-depends-
+      - name: Build Android FFI (x86_64)
+        run: |
+          export PATH="${HOME}/.cargo/bin:${PATH}"
+          export ARQMA_SKIP_DEPENDS_CRLF=1
+          bash rust/tool/build_mobile_wallet_ffi_android.sh
+      - run: bash build/ci/package-ffi-artifact.sh android-x86_64 "${{ inputs.tag }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffi-android-x86_64
+          path: dist/arqma-wallet-ffi-android-x86_64-*.zip
+
+  upload-android-ffi:
+    name: Overwrite Android FFI release assets
+    needs: [ffi-android-arm64, ffi-android-x86_64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: List Android FFI zips
+        run: find artifacts -type f -name 'arqma-wallet-ffi-android-*.zip' | sort
+      - name: Refresh SHA256SUMS (Android lines only)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${{ inputs.tag }}"
+          SUMS="SHA256SUMS-ffi-${TAG}.txt"
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" --pattern "${SUMS}" --dir prior
+          cp "prior/${SUMS}" "${SUMS}"
+          mapfile -t ZIPS < <(find artifacts -type f -name 'arqma-wallet-ffi-android-*.zip' | sort)
+          TMP="$(mktemp)"
+          while IFS= read -r line; do
+            fname="${line#* }"
+            replaced=0
+            for z in "${ZIPS[@]}"; do
+              base="$(basename "${z}")"
+              if [ "${fname}" = "${base}" ]; then
+                hash="$(shasum -a 256 "${z}" | awk '{print $1}')"
+                echo "${hash} ${base}" >> "${TMP}"
+                replaced=1
+                break
+              fi
+            done
+            if [ "${replaced}" -eq 0 ]; then
+              echo "${line}" >> "${TMP}"
+            fi
+          done < "${SUMS}"
+          mv "${TMP}" "${SUMS}"
+          cat "${SUMS}"
+      - name: Upload (clobber Android zips + checksums on tag)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          TAG="${{ inputs.tag }}"
+          mapfile -t ZIPS < <(find artifacts -type f -name 'arqma-wallet-ffi-android-*.zip' | sort)
+          gh release upload "${TAG}" --repo "${GITHUB_REPOSITORY}" --clobber \
+            "${ZIPS[@]}" "SHA256SUMS-ffi-${TAG}.txt"
+      - name: Update release notes (Android republish)
+        if: hashFiles(format('build/ci/release-notes-ffi-{0}.md', inputs.tag)) != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          gh release edit "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --notes-file "build/ci/release-notes-ffi-${TAG}.md"
