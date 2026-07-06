@@ -37,7 +37,8 @@ cmake -S "${UPSTREAM}" -B "${BUILD_DIR}" \
   -DBUILD_TESTS=OFF \
   -DBUILD_DOCUMENTATION=OFF \
   -DBUILD_DEBUG_UTILITIES=OFF \
-  -DUSE_READLINE=OFF
+  -DUSE_READLINE=OFF \
+  -DARQMA_SKIP_EMBEDDED_TRANSLATIONS=ON
 
 TARGETS=(epee easylogging randomx lmdb cryptonote_format_utils_basic wallet_merged)
 for t in "${TARGETS[@]}"; do
