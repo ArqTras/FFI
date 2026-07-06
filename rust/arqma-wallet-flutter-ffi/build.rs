@@ -496,12 +496,12 @@ fn linux_hybrid_static_dep_libs() -> &'static [&'static str] {
     ]
 }
 
+/// macOS `contrib/depends` Boost omits container/locale (not in upstream packages.mk).
 fn macos_hybrid_full_static_dep_libs() -> &'static [&'static str] {
     &[
         "hidapi",
         "boost_program_options",
         "boost_thread",
-        "boost_container",
         "boost_date_time",
         "unbound",
         "boost_filesystem",
@@ -512,7 +512,6 @@ fn macos_hybrid_full_static_dep_libs() -> &'static [&'static str] {
         "readline",
         "boost_serialization",
         "boost_regex",
-        "boost_locale",
         "zmq",
         "sodium",
     ]
@@ -543,7 +542,6 @@ fn macos_hybrid_static_dep_libs() -> &'static [&'static str] {
         "hidapi",
         "boost_program_options",
         "boost_thread",
-        "boost_container",
         "boost_date_time",
         "boost_filesystem",
         "boost_atomic",
@@ -553,7 +551,6 @@ fn macos_hybrid_static_dep_libs() -> &'static [&'static str] {
         "readline",
         "boost_serialization",
         "boost_regex",
-        "boost_locale",
         "sodium",
     ]
 }

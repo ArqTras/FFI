@@ -4,11 +4,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 UPSTREAM="${ARQMA_WALLET2_UPSTREAM_DIR:-${ROOT}/rust/arqma-rpc-upstream}"
 DEPENDS_HOST="${ARQMA_IOS_DEPENDS_HOST:-aarch64-apple-ios}"
+export ARQMA_IOS_DEPENDS_HOST="${DEPENDS_HOST}"
 export PATH="/usr/bin:/bin:${HOME}/.cargo/bin:/opt/homebrew/bin:${PATH}"
 J="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
 bash "${ROOT}/build/ci/patch-arqma-epee-floor.sh" "${UPSTREAM}" 2>/dev/null || true
-bash "${ROOT}/build/ci/patch-zeromq-ios-host.sh" "${UPSTREAM}"
+bash "${ROOT}/build/ci/patch-zeromq-ios-host.sh" "${UPSTREAM}" "${DEPENDS_HOST}"
 
 if [[ "${ARQMA_SKIP_IOS_DEPENDS:-0}" != "1" ]]; then
   echo "==> contrib/depends (HOST=${DEPENDS_HOST}) — cold build can take 30–90+ minutes"

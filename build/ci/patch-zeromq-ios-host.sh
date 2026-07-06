@@ -14,9 +14,9 @@ CFG_IOS_SRC="${ROOT}/build/ci/patch-zeromq-configure-ios.sh"
 DEPENDS_ZMQ="${UP}/contrib/depends/patches/zeromq"
 ZMQ_MK="${UP}/contrib/depends/packages/zeromq.mk"
 
-HOST_HINT="${ARQMA_IOS_DEPENDS_HOST:-${ARQMA_ANDROID_DEPENDS_HOST:-}}"
-if [[ "${HOST_HINT}" != *apple-ios* && "${1:-}" != *apple-ios* ]]; then
-  echo "[patch-zeromq-ios-host] skip (not an iOS depends host)"
+HOST_HINT="${2:-${ARQMA_IOS_DEPENDS_HOST:-${ARQMA_ANDROID_DEPENDS_HOST:-}}}"
+if [[ "${HOST_HINT}" != *apple-ios* ]]; then
+  echo "[patch-zeromq-ios-host] skip (not an iOS depends host: ${HOST_HINT:-unset})"
   exit 0
 fi
 
