@@ -119,6 +119,11 @@ fn android_wallet_ffi_static_hybrid_cdylib_args() {
 
 fn compile_clear_cache_stub() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    // Homebrew GNU `ar` produces archives Apple `ld` rejects under `-force_load`.
+    if target_os == "ios" {
+        std::env::set_var("AR", "/usr/bin/ar");
+        std::env::set_var("RANLIB", "/usr/bin/ranlib");
+    }
     let mut build = cc::Build::new();
     build.cpp(true).file("ios_stubs/clear_cache.cpp");
     if target_os == "ios" {
@@ -296,6 +301,12 @@ fn macos_wallet_ffi_static_hybrid_cdylib_args() {
             "cargo:warning=arqma-wallet-flutter-ffi: static-hybrid prefers contrib/depends ({})",
             libdir.display()
         );
+        for brew_boost in homebrew_boost_lib_dirs() {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                brew_boost.display().to_string().replace('\\', "/")
+            );
+        }
     }
 
     emit("-Wl,-search_paths_first,-headerpad_max_install_names");
@@ -644,44 +655,107 @@ fn depends_vendor_archive_fuzzy_boost(libdir: &Path, stem: &str) -> Option<PathB
     hits.into_iter().next()
 }
 
-/// iOS: `-dead_strip` on the cdylib can drop needed objects from vendored `.a` unless force-loaded.
-fn emit_depends_vendor_lib_force_load(emit: &dyn Fn(&str), libdir: &Path, stem: &str) {
+fn dylib_link_stem(stem: &str) -> String {
+    if std::env::var("CARGO_CFG_TARGET_OS").ok().as_deref() == Some("macos")
+        && stem.starts_with("boost_")
+        && !stem.contains("-mt")
+    {
+        format!("{stem}-mt")
+    } else {
+        stem.to_string()
+    }
+}
+
+fn homebrew_boost_lib_dirs() -> Vec<PathBuf> {
+    ["/opt/homebrew", "/usr/local"]
+        .into_iter()
+        .map(|prefix| PathBuf::from(prefix).join("opt/boost/lib"))
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+/// Resolve a static `.a` under `contrib/depends`, with optional Homebrew Boost fallback on macOS.
+fn resolve_vendor_static_archive(libdir: &Path, stem: &str) -> Option<PathBuf> {
     for p in depends_vendor_archive_paths(libdir, stem) {
         if p.is_file() {
-            emit("-Wl,-force_load");
-            emit(&path_for_ld(&p));
-            return;
+            return Some(p);
         }
     }
     if let Some(p) = depends_vendor_archive_fuzzy_boost(libdir, stem) {
+        return Some(p);
+    }
+    if std::env::var("CARGO_CFG_TARGET_OS").ok().as_deref() == Some("macos") && stem.starts_with("boost_")
+    {
+        for brew_lib in homebrew_boost_lib_dirs() {
+            for p in depends_vendor_archive_paths(&brew_lib, stem) {
+                if p.is_file() {
+                    println!(
+                        "cargo:warning=arqma-wallet-flutter-ffi: using Homebrew static `{stem}` ({})",
+                        p.display()
+                    );
+                    return Some(p);
+                }
+            }
+            if let Some(p) = depends_vendor_archive_fuzzy_boost(&brew_lib, stem) {
+                println!(
+                    "cargo:warning=arqma-wallet-flutter-ffi: using Homebrew static `{stem}` ({})",
+                    p.display()
+                );
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+fn apple_skip_dylib_fallback_for_missing_vendor_archive(stem: &str) -> bool {
+    match std::env::var("CARGO_CFG_TARGET_OS").ok().as_deref() {
+        Some("ios") => true,
+        // `contrib/depends` Boost omits container/locale; Homebrew Boost fills them via `-l` + link-search.
+        Some("macos") => !stem.starts_with("boost_"),
+        _ => false,
+    }
+}
+
+/// iOS: `-dead_strip` on the cdylib can drop needed objects from vendored `.a` unless force-loaded.
+fn emit_depends_vendor_lib_force_load(emit: &dyn Fn(&str), libdir: &Path, stem: &str) {
+    if let Some(p) = resolve_vendor_static_archive(libdir, stem) {
         emit("-Wl,-force_load");
         emit(&path_for_ld(&p));
         return;
     }
     println!(
-        "cargo:warning=arqma-wallet-flutter-ffi: contrib/depends has no static archive for `{stem}` under {}",
-        libdir.display()
+        "cargo:warning=arqma-wallet-flutter-ffi: no static archive for `{stem}` (depends {}); {}",
+        libdir.display(),
+        if apple_skip_dylib_fallback_for_missing_vendor_archive(stem) {
+            "skipping `-l` on Apple (would fail or pick wrong SDK libs)"
+        } else {
+            "falling back to `-l`"
+        }
     );
-    emit(&format!("-l{stem}"));
+    if !apple_skip_dylib_fallback_for_missing_vendor_archive(stem) {
+        emit(&format!("-l{}", dylib_link_stem(stem)));
+    }
 }
 
 /// Emit an absolute path to a vendored `.a` so the linker does not fall back to GCC/Homebrew `-l` search paths.
 fn emit_depends_vendor_lib(emit: &dyn Fn(&str), libdir: &Path, stem: &str) {
-    for p in depends_vendor_archive_paths(libdir, stem) {
-        if p.is_file() {
-            emit(&path_for_ld(&p));
-            return;
-        }
-    }
-    if let Some(p) = depends_vendor_archive_fuzzy_boost(libdir, stem) {
+    if let Some(p) = resolve_vendor_static_archive(libdir, stem) {
         emit(&path_for_ld(&p));
         return;
     }
     println!(
-        "cargo:warning=arqma-wallet-flutter-ffi: contrib/depends has no static archive for `{stem}` under {}",
-        libdir.display()
+        "cargo:warning=arqma-wallet-flutter-ffi: no static archive for `{stem}` (depends {}); {}",
+        libdir.display(),
+        if apple_skip_dylib_fallback_for_missing_vendor_archive(stem) {
+            "skipping `-l` on Apple (would fail or pick wrong SDK libs)"
+        } else {
+            "falling back to `-l`"
+        }
     );
-    emit(&format!("-l{stem}"));
+    if !apple_skip_dylib_fallback_for_missing_vendor_archive(stem) {
+        emit(&format!("-l{}", dylib_link_stem(stem)));
+    }
 }
 
 fn arqma_upstream_root() -> PathBuf {
@@ -735,14 +809,10 @@ fn emit_ios_wallet_aux_archives(emit: &dyn Fn(&str)) {
     for sub in ["build-ios-depends-device", "build-ios-device"] {
         let root = upstream.join(sub);
         let merged = root.join("src/wallet/libwallet_merged.a");
-        // `arqma-wallet2-api` links `wallet_merged` + `lmdb` (+whole-archive). Folded `wallet_merged`
-        // still needs standalone `librandomx.a` and often `libeasylogging.a` for logging symbols.
-        // Never force_load epee or lmdb here (duplicate symbols with merged + wallet2-api).
-        let aux = [
-            root.join("contrib/epee/src/libepee.a"),
-            root.join("external/randomarq/librandomx.a"),
-            root.join("external/easylogging++/libeasylogging.a"),
-        ];
+        // `arqma-wallet2-api` links folded `wallet_merged` + `lmdb` only. CI `wallet_merged` already
+        // contains epee / easylogging / randomx (CMake + optional fold-wallet-merged-archive.sh).
+        // Re force-loading those `.a` files → hundreds of duplicate symbols on Apple ld.
+        let aux = [root.join("src/net/libnet_error.a")];
         let mut linked = false;
         for path in aux {
             if path.is_file() {

@@ -4,28 +4,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 UPSTREAM="${ARQMA_WALLET2_UPSTREAM_DIR:-${ROOT}/rust/arqma-rpc-upstream}"
 DEPENDS_HOST="${ARQMA_IOS_DEPENDS_HOST:-aarch64-apple-ios}"
-IOS_DEPLOY_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}"
+export PATH="/usr/bin:/bin:${HOME}/.cargo/bin:/opt/homebrew/bin:${PATH}"
 J="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
 bash "${ROOT}/build/ci/patch-arqma-epee-floor.sh" "${UPSTREAM}" 2>/dev/null || true
-export ARQMA_IOS_DEPENDS_HOST="${DEPENDS_HOST}"
 bash "${ROOT}/build/ci/patch-zeromq-ios-host.sh" "${UPSTREAM}"
-bash "${ROOT}/build/ci/patch-arqma-ios-translations.sh" "${UPSTREAM}"
 
 if [[ "${ARQMA_SKIP_IOS_DEPENDS:-0}" != "1" ]]; then
   echo "==> contrib/depends (HOST=${DEPENDS_HOST}) — cold build can take 30–90+ minutes"
   mkdir -p "${UPSTREAM}/contrib/depends/built" "${UPSTREAM}/contrib/depends/sources"
-  # Do not leak IPHONEOS_DEPLOYMENT_TARGET / SDKROOT into native_b2 (macOS b2 engine).
-  # shellcheck source=/dev/null
-  source "${ROOT}/build/ci/ios-depends-env.sh"
   make -C "${UPSTREAM}/contrib/depends" "HOST=${DEPENDS_HOST}" -j"${J}"
   bash "${ROOT}/build/ci/build-icu-static-into-depends.sh" "${UPSTREAM}" "${DEPENDS_HOST}"
-  bash "${ROOT}/build/ci/patch-depends-boost-cmake-ios.sh" "${UPSTREAM}" "${DEPENDS_HOST}"
 fi
-
-export IPHONEOS_DEPLOYMENT_TARGET="${IOS_DEPLOY_TARGET}"
-export SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
-export PATH="/usr/bin:/bin:${HOME}/.cargo/bin:/opt/homebrew/bin:${PATH}"
 
 TOOLCHAIN="${UPSTREAM}/contrib/depends/${DEPENDS_HOST}/share/toolchain.cmake"
 if [[ ! -f "${TOOLCHAIN}" ]]; then
@@ -37,13 +27,9 @@ BUILD_DIR="${UPSTREAM}/build-ios-depends-device"
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
 
-echo "==> CMake iOS (depends toolchain, SDKROOT=${SDKROOT})"
+echo "==> CMake iOS (depends toolchain)"
 cmake -S "${UPSTREAM}" -B "${BUILD_DIR}" \
   -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN}" \
-  -DIOS=ON \
-  -DARCH=arm64 \
-  -DARQMA_SKIP_EMBEDDED_TRANSLATIONS=ON \
-  -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
   -DBUILD_GUI_DEPS=ON \
   -DSTATIC=ON \
   -DCMAKE_BUILD_TYPE=Release \
@@ -58,7 +44,7 @@ for t in "${TARGETS[@]}"; do
   cmake --build "${BUILD_DIR}" --target "${t}" -j"${J}"
 done
 
-bash "${ROOT}/build/ci/fold-wallet-merged-archive.sh" "${BUILD_DIR}"
+bash "${ROOT}/build/ci/fold-wallet-merged-archive.sh" "${BUILD_DIR}" || true
 
 merged="${BUILD_DIR}/src/wallet/libwallet_merged.a"
 if [[ ! -f "${merged}" ]] || [[ "$(wc -c < "${merged}" | tr -d ' ')" -lt 1048576 ]]; then
